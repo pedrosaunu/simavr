@@ -15,6 +15,8 @@ start:
     sts 0x84, r16
     ldi r16, 0x40
     sts 0x81, r16    /* ICES1 rising, ICNC1=0, CS=0 */
+    lds r20, 0x84  /* pre-edge TCNT1L, guest-visible */
+    lds r21, 0x85  /* pre-edge TCNT1H */
     ldi r16, 0xa5
     sts 0x100, r16  /* Ready for external PB0 edge */
     .rept 12
