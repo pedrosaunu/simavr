@@ -25,6 +25,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 
 #include "avr_timer.h"
@@ -368,7 +369,7 @@ avr_timer_tcnt_read(
 	avr_timer_t * p = (avr_timer_t *)param;
 	// made to trigger potential watchpoints
 
-	uint16_t tcnt = _avr_timer_get_current_tcnt(p);
+	uint16_t tcnt = p->sync_holding ? p->sync_hold_tcnt : _avr_timer_get_current_tcnt(p);
 
 	avr->data[p->r_tcnt] = tcnt;
 	if (p->r_tcnth)
@@ -405,6 +406,10 @@ avr_timer_tcnt_write(
 {
 	avr_timer_t * p = (avr_timer_t *)param;
 	avr_core_watch_write(avr, addr, v);
+	if (p->sync_holding) {
+		p->sync_hold_tcnt = _timer_get_tcnt(p);
+		return;
+	}
 	uint16_t tcnt = _timer_get_tcnt(p);
 
 	if (!p->tov_top)
@@ -608,6 +613,9 @@ avr_timer_reconfigure(
 					__FUNCTION__, p->name, mode, p->mode.kind);
 		}
 	}
+	/* No scheduled timer event may advance during TSM|PSRSYNC. */
+	if (p->sync_holding)
+		avr_timer_cancel_all_cycle_timers(avr, p, 0);
 }
 
 static void
@@ -719,6 +727,66 @@ avr_timer_write(
 		p->wgm_op_mode_size = (1 << p->mode.size) - 1;
 
 		avr_timer_reconfigure(p, 1);
+	}
+}
+
+
+/*
+ * GTCCR.TSM/PSRSYNC on ATmega48/88/168/328 family.
+ *
+ * The synchronous prescaler is shared by Timer0 and Timer1. GTCCR is
+ * registered once by Timer0; both timers are suspended and released together.
+ * This is intentionally separate from Timer2's asynchronous PSRASY input.
+ */
+static void
+avr_timer_sync_hold(avr_t *avr, avr_timer_t *t, int hold)
+{
+	if (hold) {
+		if (!t->sync_holding) {
+			t->sync_hold_tcnt = _avr_timer_get_current_tcnt(t);
+			t->sync_holding = 1;
+		}
+		avr_timer_cancel_all_cycle_timers(avr, t, 0);
+		return;
+	}
+	if (!t->sync_holding)
+		return;
+
+	uint16_t counter = t->sync_hold_tcnt;
+	t->sync_holding = 0;
+	t->sync_epoch = avr->cycle;
+	avr_timer_reconfigure(t, 1);
+	if (t->tov_cycles > 1) {
+		if (t->r_tcnth)
+			avr->data[t->r_tcnth] = counter >> 8;
+		avr_timer_tcnt_write(avr, t->r_tcnt, counter & 0xff, t);
+	}
+}
+
+static void
+avr_timer_gtccr_write(avr_t *avr, avr_io_addr_t addr, uint8_t value, void *param)
+{
+	(void)param;
+	uint8_t previous = avr->data[addr];
+	uint8_t hold = (value & 0x81) == 0x81;
+	uint8_t was_held = (previous & 0x81) == 0x81;
+	avr_core_watch_write(avr, addr, value);
+
+	/* The synchronous reset bit is a strobe unless TSM holds it. */
+	avr->data[addr] = (value & 0x80) ? (value & 0x83) : 0;
+
+	for (avr_io_t *io = avr->io_port; io; io = io->next) {
+		if (!io->kind || strcmp(io->kind, "timer"))
+			continue;
+		avr_timer_t *t = (avr_timer_t *)io;
+		if (!t->sync_prescaler)
+			continue;
+
+		if (hold) {
+			avr_timer_sync_hold(avr, t, 1);
+		} else if (was_held) {
+			avr_timer_sync_hold(avr, t, 0);
+		}
 	}
 }
 
@@ -915,6 +983,8 @@ avr_timer_init(
 	p->io = _io;
 
 	avr_register_io(avr, &p->io);
+	if (p->r_gtccr)
+		avr_register_io_write(avr, p->r_gtccr, avr_timer_gtccr_write, p);
 	avr_register_vector(avr, &p->overflow);
 	avr_register_vector(avr, &p->icr);
 
