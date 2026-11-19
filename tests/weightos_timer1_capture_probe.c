@@ -10,8 +10,9 @@
 enum { CAP=8192 };
 int main(int argc,char **argv){
     if(argc!=3 || (strcmp(argv[2],"--observe")!=0 &&
-                   strcmp(argv[2],"--strict")!=0)) {
-        fprintf(stderr,"usage: %s firmware.bin --observe|--strict\n",argv[0]);
+                   strcmp(argv[2],"--strict")!=0 &&
+                   strcmp(argv[2],"--expect-known-red")!=0)) {
+        fprintf(stderr,"usage: %s firmware.bin --observe|--strict|--expect-known-red\n",argv[0]);
         return 2;
     }
     uint8_t img[CAP]={0};
@@ -49,9 +50,16 @@ int main(int argc,char **argv){
     unsigned counter_low=avr->data[20],counter_high=avr->data[21];
     int match=(counter_low==0x34 && counter_high==0x12 &&
                low==0x34 && high==0x12 && (flags&0x20)==0x20);
-    printf("ICP1_PRE_EDGE_GUEST_TCNT1L=%02x TCNT1H=%02x\\n",counter_low,counter_high);
+    printf("ICP1_PRE_EDGE_GUEST_TCNT1L=%02x TCNT1H=%02x\n",counter_low,counter_high);
     printf("ICP1_GUEST_READBACK ICR1L=%02x ICR1H=%02x TIFR1=%02x expected_16=1234 match=%d\n",
            low,high,flags,match);
     avr_terminate(avr);
-    return strcmp(argv[2],"--strict")==0 && !match?1:0;
+    if(strcmp(argv[2],"--strict")==0)return match?0:1;
+    if(strcmp(argv[2],"--expect-known-red")==0) {
+        /* Preserves a specific simulator disagreement, not a functional PASS. */
+        return !match && low==0 && high==0 &&
+               counter_low==0x34 && counter_high==0x12 &&
+               (flags&0x20)==0x20 ? 0 : 9;
+    }
+    return 0;
 }
