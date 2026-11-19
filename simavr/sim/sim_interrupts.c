@@ -303,16 +303,18 @@ another:
 		}
 		avr_clear_interrupt(avr, vector);
 
-		/* EXPERIMENT ONLY -- not an accepted timing fix. The ATmega328P
-		 * must consume four clocks between the interrupt boundary and
-		 * executing its vector. Advance peripherals over that interval,
-		 * without executing a guest opcode. Keep this implementation on
-		 * the disposable IRQ-timing experiment branch.
+		/* Classic AVR interrupt entry consumes four clocks with a two-byte
+		 * return PC, five with a three-byte PC (two/three stack clocks
+		 * plus two entry clocks). Firmware executes the vector instruction
+		 * only after that interval. Advance peripheral events during entry,
+		 * without executing a guest opcode. Do not include the vector's
+		 * own JMP/RJMP cycles in this latency.
+		 *
+		 * This is an incremental classic-AVR model; other interrupt
+		 * controllers and sleep wake-up timing require separate tests.
 		 */
-		if ((!strcmp(avr->mmcu, "atmega328") || !strcmp(avr->mmcu, "atmega328p"))) {
-			avr->cycle += 4;
-			avr_cycle_timer_process(avr);
-		}
+		avr->cycle += 2 + avr->address_size;
+		avr_cycle_timer_process(avr);
 	}
 }
 
