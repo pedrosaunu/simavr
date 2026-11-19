@@ -99,10 +99,27 @@ the **fork branch**, builds libsimavr from source, and runs the repository's
 native tests. It uses one standard public-repository Linux runner, with a
 12-minute job timeout and read-only token.
 
-GitHub disables workflows by default on newly created forks. At this point
-the fork's Actions API reports **zero runs**. Please activate Actions in
-the fork's Actions tab if it is disabled. Without a green rebuild, the
-candidate is **not verified**.
+The fork's Actions have now attempted to run. One representative workflow
+execution is https://github.com/pedrosaunu/simavr/actions/runs/44452958065.
+It failed **before any runner was assigned**: zero job steps, empty runner
+name, runner_id 0, completed in approximately two seconds and no downloadable
+job logs. This is **NOT a C build or functional-test result**; do not
+diagnose it as a compiler error. The Actions/billing/runner-provisioning
+restriction must be resolved independently before interpreting CI as pass/fail.
+
+The four host-side regressions currently demonstrate **RED on the unmodified
+upstream Linux CI library**, not GREEN on a rebuilt fork library:
+
+1. TSM hold: Timer0/Timer1 advance from 4 to 15 while held.
+2. TSM release: same frozen-counter violation before release.
+3. TCNT writes during TSM: original simulator observes TCNT0=33 instead of
+   the guest-written 32.
+4. PSRSYNC while timers stopped: GTCCR reads back the strobe bit as 1 rather
+   than self-clearing it.
+
+The current code is a **candidate**, not a verified patch or upstream PR.
+Its shared epoch alignment, zero-clock behavior, overflow, PWM/CTC, Timer2
+PSRASY and cross-device regressions still require actual execution.
 
 ## Requirements for the eventual fix
 
