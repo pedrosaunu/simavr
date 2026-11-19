@@ -1,0 +1,40 @@
+name: ATmega328P shared prescaler regression
+on:
+  push:
+    branches:
+      - fix/atmega328p-shared-prescaler
+    paths:
+      - 'simavr/sim/avr_timer.c'
+      - 'simavr/sim/avr_timer.h'
+      - 'simavr/cores/sim_megax8.h'
+      - 'tests/test_atmega328p_*.c'
+      - '.github/workflows/atmega328p-prescaler-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prescaler-atmega328p
+  cancel-in-progress: true
+
+jobs:
+  native-regressions:
+    name: Compile changed MCU and run native timer regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-avr avr-libc libelf-dev pkg-config
+      - name: Build libsimavr from this branch
+        run: make -C simavr RELEASE=1 all
+      - name: Build and execute existing native test suite
+        run: |
+          make -C tests RELEASE=1 all
+          make -C tests RELEASE=1 run_tests
