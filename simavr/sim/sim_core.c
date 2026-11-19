@@ -369,6 +369,29 @@ static inline void _avr_set_ram(avr_t * avr, uint16_t addr, uint8_t v)
 	avr_core_watch_write(avr, addr, v);
 }
 
+/* Stage CPU-issued mapped I/O writes until the instruction-retirement edge.
+ * SRAM and GPR writes retain their immediate semantics. This is independent
+ * of timer addresses and device names. Read timing and bit_io special writes
+ * remain outside this first incremental model.
+ */
+typedef struct {
+    uint16_t address;
+    uint8_t value;
+    uint8_t pending;
+} avr_cpu_writeback_t;
+
+static inline void
+_avr_cpu_store(avr_t *avr, avr_cpu_writeback_t *wb, uint16_t addr, uint8_t value)
+{
+    if (addr >= 32 && addr <= avr->ioend) {
+        wb->pending = 1;
+        wb->address = addr;
+        wb->value = value;
+    } else {
+        _avr_set_ram(avr, addr, value);
+    }
+}
+
 /*
  * Get a value from SRAM.
  */
@@ -800,6 +823,7 @@ run_one_again:
 	uint32_t		opcode = _avr_flash_read16le(avr, avr->pc);
 	avr_flashaddr_t	new_pc = avr->pc + 2;	// future "default" pc
 	int 			cycle = 1;
+	avr_cpu_writeback_t writeback = {0};
 
 	switch (opcode & 0xf000) {
 		case 0x0000: {
@@ -1055,7 +1079,7 @@ run_one_again:
 					if (opcode & 0x0200) {
 						STATE("st (Z+%d[%04x]), %s[%02x]  \t%s\n",
 						      q, v+q, AVR_REGNAME(d), avr->data[d], DAS(v + q));
-						_avr_set_ram(avr, v+q, avr->data[d]);
+						_avr_cpu_store(avr, &writeback, v+q, avr->data[d]);
 					} else {
 						STATE("ld %s, (Z+%d[%04x])=[%02x]  \t%s\n",
 						      AVR_REGNAME(d), q, v+q, avr->data[v+q], DAS(v + q));
@@ -1070,7 +1094,7 @@ run_one_again:
 					if (opcode & 0x0200) {
 						STATE("st (Y+%d[%04x]), %s[%02x]  \t%s\n",
 						      q, v+q, AVR_REGNAME(d), avr->data[d], DAS(v + q));
-						_avr_set_ram(avr, v+q, avr->data[d]);
+						_avr_cpu_store(avr, &writeback, v+q, avr->data[d]);
 					} else {
 						STATE("ld %s, (Y+%d[%04x])=[%02x]  \t%s\n",
 						      AVR_REGNAME(d), q, v+q, avr->data[d+q], DAS(v + q));
@@ -1259,7 +1283,7 @@ run_one_again:
 							      AVR_REGNAME(d), vd, DAS(x));
 							cycle++; // 2 cycles, except tinyavr
 							if (op == 2) x--;
-							_avr_set_ram(avr, x, vd);
+							_avr_cpu_store(avr, &writeback, x, vd);
 							if (op == 1) x++;
 							_avr_set_r16le_hl(avr, R_XL, x);
 						}	break;
@@ -1289,7 +1313,7 @@ run_one_again:
 							      AVR_REGNAME(d), vd, DAS(y));
 							cycle++;
 							if (op == 2) y--;
-							_avr_set_ram(avr, y, vd);
+							_avr_cpu_store(avr, &writeback, y, vd);
 							if (op == 1) y++;
 							_avr_set_r16le_hl(avr, R_YL, y);
 						}	break;
@@ -1300,20 +1324,8 @@ run_one_again:
 							STATE("sts 0x%04x, %s[%02x]\t\t%s\n",
 							      x, AVR_REGNAME(d), vd, DAS(x));
 							cycle++;
-							/* EXPERIMENT ONLY: TCNT1L direct STS is a two-cycle
-							 * instruction. Test whether committing this I/O write
-							 * at its completion corrects the repeated-overflow phase.
-							 * Do not generalize to other opcodes/peripherals without
-							 * a full bus-cycle timing model and independent evidence.
-							 */
-							if (x == 0x84 && !strcmp(avr->mmcu, "atmega328")) {
-								avr->cycle += cycle;
-								_avr_set_ram(avr, x, vd);
-								avr->cycle -= cycle;
-							} else {
-								_avr_set_ram(avr, x, vd);
-							}
-						}	break;
+							_avr_cpu_store(avr, &writeback, x, vd);
+}	break;
 						case 0x9001:
 						case 0x9002: {	// LD -- Load Indirect from Data using Z -- 1001 000d dddd 00oo
 							int op = opcode & 3;
@@ -1338,7 +1350,7 @@ run_one_again:
 							      AVR_REGNAME(d), vd, DAS(z));
 							cycle++; // 2 cycles, except tinyavr
 							if (op == 2) z--;
-							_avr_set_ram(avr, z, vd);
+							_avr_cpu_store(avr, &writeback, z, vd);
 							if (op == 1) z++;
 							_avr_set_r16le_hl(avr, R_ZL, z);
 						}	break;
@@ -1484,7 +1496,7 @@ run_one_again:
 										io += 32;
 										res = _avr_get_ram(avr, io) & ~(1 << bit);
 										STATE("cbi %s[%04x], 0x%02x = %02x\n", AVR_REGNAME(io), avr->data[io], 1 << bit, res);
-										_avr_set_ram(avr, io, res);
+										_avr_cpu_store(avr, &writeback, io, res);
 									}
 									}
 									cycle++;
@@ -1512,7 +1524,7 @@ run_one_again:
 										io += 32;
 										res = _avr_get_ram(avr, io) | (1 << bit);
 										STATE("sbi %s[%04x], 0x%02x = %02x\n", AVR_REGNAME(io), avr->data[io], 1 << bit, res);
-										_avr_set_ram(avr, io, res);
+										_avr_cpu_store(avr, &writeback, io, res);
 									}
 									}
 									cycle++;
@@ -1557,18 +1569,8 @@ run_one_again:
 				case 0xb800: {	// OUT A,Rr -- 1011 1AAd dddd AAAA
 					get_d5_a6(opcode);
 					STATE("out %s, %s[%02x]\n", AVR_REGNAME(A), AVR_REGNAME(d), avr->data[d]);
-					/* EXPERIMENT ONLY: test one-clock bus commit for OUT
-					 * TCNT0 in the ATmega328P shared-timer firmware.
-					 * Do not ship this address-special-case as an AVR fix.
-					 */
-					if (A == 0x46 && !strcmp(avr->mmcu, "atmega328")) {
-						avr->cycle += cycle;
-						_avr_set_ram(avr, A, avr->data[d]);
-						avr->cycle -= cycle;
-					} else {
-						_avr_set_ram(avr, A, avr->data[d]);
-					}
-				}	break;
+					_avr_cpu_store(avr, &writeback, A, avr->data[d]);
+}	break;
 				case 0xb000: {	// IN Rd,A -- 1011 0AAd dddd AAAA
 					get_d5_a6(opcode);
 					STATE("in %s, %s[%02x]\n", AVR_REGNAME(d), AVR_REGNAME(A), avr->data[A]);
@@ -1671,6 +1673,8 @@ run_one_again:
 
 	}
 	avr->cycle += cycle;
+	if (writeback.pending)
+		_avr_set_ram(avr, writeback.address, writeback.value);
 
 	if ((avr->state == cpu_Running) &&
 		(avr->run_cycle_count > cycle) &&
