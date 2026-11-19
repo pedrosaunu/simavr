@@ -663,7 +663,13 @@ avr_timer_reconfigure(
 			avr_timer_configure(p, p->cs_div_value, p->wgm_op_mode_size, reset);
 			break;
 		case avr_timer_wgm_ctc: {
-			avr_timer_configure(p, p->cs_div_value, _timer_get_ocr(p, AVR_TIMER_COMPA), reset);
+			/* In WGM4 OCR1A is TOP; in WGM12 ICR1 is TOP.
+			 * The old unconditional OCR1A path made WGM12 free-run
+			 * when OCR1A was reset to zero even if ICR1 had TOP=3.
+			 */
+			uint16_t top = p->mode.top == avr_timer_wgm_reg_icr
+				? _timer_get_icr(p) : _timer_get_ocr(p, AVR_TIMER_COMPA);
+			avr_timer_configure(p, p->cs_div_value, top, reset);
 		}	break;
 		case avr_timer_wgm_pwm: {
 			uint16_t top = (p->mode.top == avr_timer_wgm_reg_ocra) ?
