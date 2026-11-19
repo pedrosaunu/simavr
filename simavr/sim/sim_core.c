@@ -1557,7 +1557,17 @@ run_one_again:
 				case 0xb800: {	// OUT A,Rr -- 1011 1AAd dddd AAAA
 					get_d5_a6(opcode);
 					STATE("out %s, %s[%02x]\n", AVR_REGNAME(A), AVR_REGNAME(d), avr->data[d]);
-					_avr_set_ram(avr, A, avr->data[d]);
+					/* EXPERIMENT ONLY: test one-clock bus commit for OUT
+					 * TCNT0 in the ATmega328P shared-timer firmware.
+					 * Do not ship this address-special-case as an AVR fix.
+					 */
+					if (A == 0x46 && !strcmp(avr->mmcu, "atmega328")) {
+						avr->cycle += cycle;
+						_avr_set_ram(avr, A, avr->data[d]);
+						avr->cycle -= cycle;
+					} else {
+						_avr_set_ram(avr, A, avr->data[d]);
+					}
 				}	break;
 				case 0xb000: {	// IN Rd,A -- 1011 0AAd dddd AAAA
 					get_d5_a6(opcode);
