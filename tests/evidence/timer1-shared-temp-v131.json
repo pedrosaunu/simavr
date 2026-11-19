@@ -1,0 +1,62 @@
+{
+  "schema": "simavr.weightos-timer1-cpu-visible/v1",
+  "date": "2026-11-19",
+  "status": "PASS",
+  "scope": "ATmega328P opt-in shared TEMP register CPU read/write semantics, Timer1 stopped; excludes live counting/IRQ/CTC/PWM and silicon",
+  "repository": "pedrosaunu/simavr",
+  "branch": "experiment/weightos-timer1-shared-temp-v131",
+  "tested_commit": "7019454a9a89c7c56ac481315e7f2766e90294f8",
+  "railway": {
+    "project_id": "e82a14f9-bff3-4513-87d5-c46f7dbf33c9",
+    "deployment_id": "709fce0e-bcb0-401a-8869-44239bf4973e",
+    "status": "SUCCESS",
+    "raw_build_log": "tests/evidence/timer1-shared-temp-v131-railway.jsonl"
+  },
+  "firmware": {
+    "weightos_v128_shared_temp_sha256": "10766ac960e63ac09df30784cc0206bb0d711ffd5e71eb68da966a82fcb284d1",
+    "dedicated_interleaving_sha256": "f4d52f38e08506628b94a4c90877bd2563bb3ea51834be8613e96678571de8a6"
+  },
+  "checks": {
+    "upstream_native_regression_suite": "PASS",
+    "historical_tcnt1_guest": "PASS",
+    "cross_register_guest_values": {
+      "passed": 9,
+      "failed": 0,
+      "expected_r17_to_r25": [
+        "00",
+        "34",
+        "12",
+        "78",
+        "56",
+        "ab",
+        "ee",
+        "78",
+        "56"
+      ]
+    },
+    "weightos_v128_exact_guest": {
+      "r17": "00",
+      "r18": "56",
+      "passed": true
+    },
+    "negative_controls": {
+      "shared_temp": 3,
+      "exact_guest": 2,
+      "all_detected": true
+    }
+  },
+  "implementation": "CPU writes stage a single Timer1 high TEMP; low writes atomically commit; OCR reads direct; ICR low reads latch high; separate committed ICR1H shadow protects against sim_core readback",
+  "non_claims": [
+    "silicon conformance",
+    "complete Timer1 modes",
+    "CTC counter equality or phase timing",
+    "undivided and prescaled live timer counting",
+    "capture or PWM",
+    "generic simavr upstream correction"
+  ],
+  "promotion": {
+    "upstream_pr_opened": false,
+    "master_modified": false,
+    "weightos_main_modified": false
+  }
+}
