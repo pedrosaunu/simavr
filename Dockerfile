@@ -64,7 +64,7 @@ RUN set -eux; \
       -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
       -o /tmp/weightos_pwm14_probe; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
-      /tmp/weightos_pwm14_probe /tmp/weightos_pwm14.bin; \
-    echo 'PWM14_INDEPENDENT_SIMAVR_OBSERVATION=RECORDED_NOT_YET_ACCEPTED'
+      /tmp/weightos_pwm14_probe /tmp/weightos_pwm14.bin --expect-known-red; \
+    echo 'PWM14_INDEPENDENT_SIMAVR_DIFFERENTIAL=EXPECTED_RED_NOT_ACCEPTED'
 
 CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
