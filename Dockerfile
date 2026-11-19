@@ -1,5 +1,5 @@
-# Ephemeral source-build acceptance runner for WeightOS/simavr validation.
-# GitHub Actions is not used. Any native regression failure stops the build.
+# Ephemeral OBSERVATION-ONLY runner for a nonapproved IRQ timing experiment.
+# A successful Docker build is not a passing conformance gate.
 FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -10,14 +10,20 @@ COPY . .
 RUN set -eux; \
     make -C simavr RELEASE=1 all; \
     make -C tests RELEASE=1 all; \
-    make -C tests RELEASE=1 run_tests; \
-    echo 'WEIGHTOS_PRESCALER_NATIVE_GATE=PASS'
+    if make -C tests RELEASE=1 run_tests; then \
+      echo 'IRQ_EXPERIMENT_NATIVE_REGRESSIONS=PASS'; \
+    else \
+      echo 'IRQ_EXPERIMENT_NATIVE_REGRESSIONS=FAIL'; \
+    fi
 RUN set -eux; \
     cc -std=c11 -O2 -Wall -Wextra -Werror \
     -Isimavr/sim tests/weightos_v126_irq_probe.c \
     -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/weightos_v126_probe; \
-    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/weightos_v126_probe; \
-    echo 'WEIGHTOS_V126_FORK_IRQ_PROBE=PASS'
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/weightos_v126_probe; then \
+      echo 'IRQ_EXPERIMENT_V126_DUAL_TIMER=PASS'; \
+    else \
+      echo 'IRQ_EXPERIMENT_V126_DUAL_TIMER=FAIL'; \
+    fi
 RUN set -eux; \
     cc -std=c11 -O2 -Wall -Wextra -Werror \
     -Isimavr/sim tests/weightos_shared_phase_probe.c \
@@ -45,7 +51,7 @@ RUN set -eux; \
       -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
       -o /tmp/weightos_timer1_v126_probe; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
-      /tmp/weightos_timer1_v126_probe /tmp/timer1_only_v126.bin --expect-known-red; \
-    echo 'WEIGHTOS_V126_TIMER1_KNOWN_RED_CONTROL=PASS'
+      /tmp/weightos_timer1_v126_probe /tmp/timer1_only_v126.bin --observe; \
+    echo 'IRQ_EXPERIMENT_TIMER1_RESULT=OBSERVED_NOT_ACCEPTED'
 
-CMD ["/bin/sh","-c","echo WEIGHTOS_PRESCALER_BUILD_SUCCEEDED; exit 0"]
+CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
