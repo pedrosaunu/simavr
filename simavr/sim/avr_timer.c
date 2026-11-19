@@ -60,8 +60,12 @@ static uint16_t
 _timer_get_tcnt(
 		avr_timer_t * p)
 {
+	const uint8_t committed_high = (p->r_tcnth &&
+		(p->io.avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP))
+		? p->timer16_tcnt_committed_high
+		: (p->r_tcnth ? p->io.avr->data[p->r_tcnth] : 0);
 	return p->io.avr->data[p->r_tcnt] |
-				(p->r_tcnth ? (p->io.avr->data[p->r_tcnth] << 8) : 0);
+				(p->r_tcnth ? ((uint16_t)committed_high << 8) : 0);
 }
 
 static uint16_t
@@ -360,6 +364,31 @@ _avr_timer_get_current_tcnt(
 	return 0;
 }
 
+/* Classic Timer1 high-byte CPU I/O accesses address a shared TEMP
+ * register; they must not directly update the running 16-bit counter.
+ * This first opt-in increment supports TCNT16 only, not OCR/ICR.
+ */
+static void
+avr_timer_tcnth_write(
+        struct avr_t *avr, avr_io_addr_t addr, uint8_t value, void *param)
+{
+    avr_timer_t *p = (avr_timer_t *)param;
+    p->timer16_temp = value;
+    avr_core_watch_write(avr, addr, value);
+    /* Keep the backing counter high separate from the byte just staged. */
+    avr->data[addr] = p->timer16_tcnt_committed_high;
+}
+
+static uint8_t
+avr_timer_tcnth_read(
+        struct avr_t *avr, avr_io_addr_t addr, void *param)
+{
+    (void)avr;
+    (void)addr;
+    avr_timer_t *p = (avr_timer_t *)param;
+    return p->timer16_temp;
+}
+
 static uint8_t
 avr_timer_tcnt_read(
 		struct avr_t * avr,
@@ -374,8 +403,11 @@ avr_timer_tcnt_read(
 			? _timer_get_tcnt(p) : _avr_timer_get_current_tcnt(p);
 
 	avr->data[p->r_tcnt] = tcnt;
-	if (p->r_tcnth)
+	if (p->r_tcnth) {
+		if (avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP)
+			p->timer16_temp = (uint8_t)(tcnt >> 8);
 		avr->data[p->r_tcnth] = tcnt >> 8;
+	}
 
 	return avr_core_watch_read(avr, addr);
 }
@@ -408,6 +440,12 @@ avr_timer_tcnt_write(
 {
 	avr_timer_t * p = (avr_timer_t *)param;
 	avr_core_watch_write(avr, addr, v);
+	if (p->r_tcnth &&
+		(avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP)) {
+		/* Low-byte write commits the high byte previously staged in TEMP. */
+		p->timer16_tcnt_committed_high = p->timer16_temp;
+		avr->data[p->r_tcnth] = p->timer16_tcnt_committed_high;
+	}
 	if (p->sync_holding) {
 		p->sync_hold_tcnt = _timer_get_tcnt(p);
 		return;
@@ -722,6 +760,15 @@ avr_timer_write(
 	if (new_cs != cs || new_mode != mode || new_as2 != as2) {
 	/* cs */
 		if (new_cs == 0) {
+			if (p->r_tcnth &&
+				(avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP) &&
+				p->tov_cycles) {
+				/* Preserve the live counter when its clock is disabled. */
+				uint16_t last = _avr_timer_get_current_tcnt(p);
+				p->timer16_tcnt_committed_high = (uint8_t)(last >> 8);
+				avr->data[p->r_tcnt] = (uint8_t)last;
+				avr->data[p->r_tcnth] = (uint8_t)(last >> 8);
+			}
 			p->cs_div_value = 0;		// reset prescaler
 			// cancel everything
 			avr_timer_cancel_all_cycle_timers(avr, p, 1);
@@ -789,8 +836,11 @@ avr_timer_sync_reset(avr_t *avr, avr_timer_t *t)
 	t->sync_epoch = avr->cycle;
 	avr_timer_reconfigure(t, 1);
 	if (t->tov_cycles > 1) {
-		if (t->r_tcnth)
+		if (t->r_tcnth) {
+			if (avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP)
+				t->timer16_temp = (uint8_t)(counter >> 8);
 			avr->data[t->r_tcnth] = counter >> 8;
+		}
 		avr_timer_tcnt_write(avr, t->r_tcnt, counter & 0xff, t);
 	}
 }
@@ -814,8 +864,11 @@ avr_timer_sync_hold(avr_t *avr, avr_timer_t *t, int hold)
 	t->sync_epoch = avr->cycle;
 	avr_timer_reconfigure(t, 1);
 	if (t->tov_cycles > 1) {
-		if (t->r_tcnth)
+		if (t->r_tcnth) {
+			if (avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP)
+				t->timer16_temp = (uint8_t)(counter >> 8);
 			avr->data[t->r_tcnth] = counter >> 8;
+		}
 		avr_timer_tcnt_write(avr, t->r_tcnt, counter & 0xff, t);
 	}
 }
@@ -982,6 +1035,8 @@ avr_timer_reset(
 		avr_io_t * port)
 {
 	avr_timer_t * p = (avr_timer_t *)port;
+	p->timer16_temp = 0;
+	p->timer16_tcnt_committed_high = 0;
 	avr_timer_cancel_all_cycle_timers(p->io.avr, p, 0);
 
 	// check to see if the comparators have a pin output. If they do,
@@ -1109,6 +1164,11 @@ avr_timer_init(
 	}
 	avr_register_io_write(avr, p->r_tcnt, avr_timer_tcnt_write, p);
 	avr_register_io_read(avr, p->r_tcnt, avr_timer_tcnt_read, p);
+	if (p->r_tcnth &&
+		(avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP)) {
+		avr_register_io_write(avr, p->r_tcnth, avr_timer_tcnth_write, p);
+		avr_register_io_read(avr, p->r_tcnth, avr_timer_tcnth_read, p);
+	}
 
 	if (p->as2.reg) {
 		p->ext_clock_flags = AVR_TIMER_EXTCLK_FLAG_VIRT;
