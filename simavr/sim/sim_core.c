@@ -1674,8 +1674,16 @@ run_one_again:
 
 	}
 	avr->cycle += cycle;
-	if (writeback.pending)
+	if (writeback.pending) {
+		/* Process every peripheral event from *before* this instruction
+		 * retires prior to committing the guest-visible I/O write.
+		 * Equal-clock events are dispatched by the outer run loop after
+		 * the write; hardware tie-breaks still require validation.
+		 */
+		if (!avr_cycle_timer_process_before(avr, avr->cycle))
+			return avr->pc; /* a callback requested a hardware reset */
 		_avr_set_ram(avr, writeback.address, writeback.value);
+	}
 
 	if ((avr->state == cpu_Running) &&
 		(avr->run_cycle_count > cycle) &&
