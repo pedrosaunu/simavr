@@ -1,14 +1,14 @@
 # Experimental strict regression gate. A passing differential gate is NOT silicon conformance.
 FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev \
-    gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+    gcc-avr avr-libc binutils-avr > /tmp/apt.log 2>&1 && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 COPY . .
 RUN set -eux; \
-    make -C simavr RELEASE=1 all; \
-    make -C tests RELEASE=1 all; \
+    make -C simavr RELEASE=1 all >/tmp/core-build.log 2>&1 || { tail -n 80 /tmp/core-build.log; exit 1; }; \
+    make -C tests RELEASE=1 all >/tmp/test-build.log 2>&1 || { tail -n 80 /tmp/test-build.log; exit 1; }; \
     make -C tests RELEASE=1 run_tests; \
     echo 'IRQ_EXPERIMENT_NATIVE_REGRESSIONS=PASS'
 RUN set -eux; \
