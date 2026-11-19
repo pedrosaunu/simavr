@@ -82,8 +82,8 @@ RUN set -eux; \
       -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
       -o /tmp/weightos_timer1_capture_probe; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
-      /tmp/weightos_timer1_capture_probe /tmp/weightos_timer1_capture.bin --observe; \
-    echo 'ICP1_INDEPENDENT_SIMAVR_OBSERVATION=RECORDED_PENDING_CLASSIFICATION'
+      /tmp/weightos_timer1_capture_probe /tmp/weightos_timer1_capture.bin --expect-known-red; \
+    echo 'ICP1_INDEPENDENT_SIMAVR_DIFFERENTIAL=EXPECTED_RED_NOT_ACCEPTED'
 
 
 CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
