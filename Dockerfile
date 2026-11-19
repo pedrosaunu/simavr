@@ -50,7 +50,7 @@ RUN set -eux; \
     echo 'IRQ_STRICT_TIMER1_RESULT=PASS'
 
 
-# Independent direct WGM14 simulator pin observation; diagnostic only.
+# Independent direct WGM14 simulator steady-state pin observation.\n# Startup transient is separately recorded; strict gate covers 28/28 steady samples.
 # Mode 14: ICR1=3, OCR1A=1, OCR1B=2, PB1/PB2 configured as outputs.
 # The simulator's public port state is measured after guest CPU startup.
 RUN set -eux; \
