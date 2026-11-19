@@ -14,6 +14,7 @@ typedef struct {
     avr_t *avr;
 } pwm_observer_t;
 static void pwm_pin_observe(struct avr_irq_t *irq, uint32_t value, void *param){
+    (void)irq;
     pwm_observer_t *p=(pwm_observer_t*)param;
     p->level=(value & 1U);
     p->updates++;
