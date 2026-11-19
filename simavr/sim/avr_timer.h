@@ -206,6 +206,16 @@ typedef struct avr_timer_t {
 	float			phase_accumulator;
 	uint64_t		tov_base;	// MCU cycle when the last overflow occured; when clocked externally holds external clock count
 	uint16_t		tov_top;	// current top value to calculate tnct
+	/*
+	 * Synchronous prescaler control (used by ATmega48/88/168/328 Timer0/1).
+	 * r_gtccr is configured only on the owner of the shared GTCCR handler.
+	 */
+	avr_io_addr_t	r_gtccr;
+	uint8_t		sync_prescaler;
+	uint8_t		sync_holding;
+	uint16_t	sync_hold_tcnt;
+	uint64_t	sync_epoch;
+
 } avr_timer_t;
 
 void avr_timer_init(avr_t * avr, avr_timer_t * port);
