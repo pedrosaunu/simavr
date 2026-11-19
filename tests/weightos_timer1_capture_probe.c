@@ -31,7 +31,7 @@ int main(int argc,char **argv){
     for(unsigned step=0;step<500;step++){
         int status=avr_run(avr);
         if(status!=cpu_Running && status!=cpu_Sleeping) {
-            fprintf(stderr,"MCU stop=%d step=%u\n",status,step);
+            fprintf(stderr,"MCU stop=%d step=%u pc=0x%x codeend=0x%x r17=%02x r18=%02x r19=%02x\n",status,step,(unsigned)avr->pc,(unsigned)avr->codeend,avr->data[17],avr->data[18],avr->data[19]);
             avr_terminate(avr);return 4;
         }
         if(!injected && avr->data[0x100]==0xa5){
