@@ -1300,7 +1300,19 @@ run_one_again:
 							STATE("sts 0x%04x, %s[%02x]\t\t%s\n",
 							      x, AVR_REGNAME(d), vd, DAS(x));
 							cycle++;
-							_avr_set_ram(avr, x, vd);
+							/* EXPERIMENT ONLY: TCNT1L direct STS is a two-cycle
+							 * instruction. Test whether committing this I/O write
+							 * at its completion corrects the repeated-overflow phase.
+							 * Do not generalize to other opcodes/peripherals without
+							 * a full bus-cycle timing model and independent evidence.
+							 */
+							if (x == 0x84 && !strcmp(avr->mmcu, "atmega328")) {
+								avr->cycle += cycle;
+								_avr_set_ram(avr, x, vd);
+								avr->cycle -= cycle;
+							} else {
+								_avr_set_ram(avr, x, vd);
+							}
 						}	break;
 						case 0x9001:
 						case 0x9002: {	// LD -- Load Indirect from Data using Z -- 1001 000d dddd 00oo
