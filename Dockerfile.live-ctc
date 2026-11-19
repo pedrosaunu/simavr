@@ -1,0 +1,73 @@
+# Narrow, disposable CPU-visible Timer1 shared TEMP verification image.
+# Real simavr fork, official AVR GCC firmware, no GitHub Actions.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr ca-certificates \
+    > /tmp/dependencies.log 2>&1 && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+    make -C simavr RELEASE=1 all > /tmp/simavr-build.log 2>&1 || { tail -80 /tmp/simavr-build.log; exit 1; }; \
+    make -C tests RELEASE=1 all > /tmp/simavr-tests-build.log 2>&1 || { tail -80 /tmp/simavr-tests-build.log; exit 1; }; \
+    make -C tests RELEASE=1 run_tests > /tmp/simavr-regressions.log 2>&1 || { tail -80 /tmp/simavr-regressions.log; exit 1; }; \
+    echo SIMAVR_NATIVE_REGRESSIONS_PASS
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -x assembler-with-cpp tests/weightos_timer1_temp.S -o /tmp/tcnt.elf; \
+    avr-objcopy -O binary -j .text /tmp/tcnt.elf /tmp/tcnt.bin; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_timer1_temp_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/tcnt_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/tcnt_probe /tmp/tcnt.bin --strict; \
+    echo TIMER1_TCNT_HISTORICAL_PASS
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -x assembler-with-cpp tests/weightos_timer1_shared_temp.S -o /tmp/shared.elf; \
+    avr-objcopy -O binary -j .text /tmp/shared.elf /tmp/shared.bin; \
+    sha256sum /tmp/shared.bin; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_timer1_shared_temp_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/shared_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/shared_probe /tmp/shared.bin --strict; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/shared_probe /tmp/shared.bin --negative-ocr; then exit 71; fi; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/shared_probe /tmp/shared.bin --negative-icr; then exit 72; fi; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/shared_probe /tmp/shared.bin --negative-temp; then exit 73; fi; \
+    echo TIMER1_SHARED_TEMP_STRICT_AND_NEGATIVES_PASS
+# Exact 15-instruction WeightOS v1.28 guest, accepted recurrent fixture.
+# Instruction bytes are compared by SHA-256, not inferred from source comments.
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -x assembler-with-cpp tests/weightos_v128_exact_guest.S -o /tmp/exact_v128.elf; \
+    avr-objcopy -O binary -j .text /tmp/exact_v128.elf /tmp/exact_v128.bin; \
+    echo '10766ac960e63ac09df30784cc0206bb0d711ffd5e71eb68da966a82fcb284d1  /tmp/exact_v128.bin' | sha256sum -c -; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_v128_exact_guest_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/exact_v128_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/exact_v128_probe /tmp/exact_v128.bin --strict; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/exact_v128_probe /tmp/exact_v128.bin --negative-r17; then exit 75; fi; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/exact_v128_probe /tmp/exact_v128.bin --negative-r18; then exit 76; fi; \
+    echo WEIGHTOS_V128_EXACT_GUEST_SIMAVR_GPRS=PASS
+
+# DIAGNOSTIC: live WGM4/12 (CS=1 or 2), guest-visible register traces.
+# No PASS claim for timer matching yet: trace is independently compared by
+# WeightOS after pinning every guest firmware SHA and per-instruction output.
+RUN set -eux; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_timer1_live_ctc_trace.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/live_ctc_trace; \
+    for mode in 4 12; do \
+      for cs in 1 2; do \
+        avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+          -DWGM=$mode -DCLOCK_SELECT=$cs -x assembler-with-cpp \
+          tests/weightos_timer1_live_ctc.S -o /tmp/live_ctc_$mode\_$cs.elf; \
+        avr-objcopy -O binary -j .text /tmp/live_ctc_$mode\_$cs.elf /tmp/live_ctc_$mode\_$cs.bin; \
+        echo "CTC_SIMAVR_FIRMWARE wgm=$mode cs=$cs"; \
+        sha256sum /tmp/live_ctc_$mode\_$cs.bin; \
+        LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+          /tmp/live_ctc_trace /tmp/live_ctc_$mode\_$cs.bin $mode --trace; \
+      done; \
+    done; \
+    echo CTC_SIMAVR_LIVE_OBSERVATIONS_CAPTURED
+
+CMD ["/bin/sh","-c","echo CTC_SIMAVR_DIAGNOSTIC_COMPLETE; exit 0"]
