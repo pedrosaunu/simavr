@@ -49,6 +49,14 @@ int main(int argc, char **argv) {
                avr->data[17],avr->data[18],avr->data[19],avr->data[20],
                avr->data[21],avr->data[22],avr->data[23],avr->data[24]);
     }
+    /* Data sheet: CTC clear at TOP=3 does not overflow a 16-bit timer.
+     * The sample is obtained via guest LDS TIFR1 into GPRs 18/20/22/24.
+     */
+    unsigned bad_tov=0;
+    for (int gpr=18;gpr<=24;gpr+=2)
+        if (avr->data[gpr] & 1) bad_tov++;
+    printf("CTC_SIMAVR_FLAG_GATE wgm=%d top=3 false_overflows=%u\\n",mode,bad_tov);
+    if (bad_tov) { avr_terminate(avr); return 1; }
     printf("CTC_SIMAVR_COMPLETE wgm=%d steps=20 pc=%u cycles=%" PRIu64 "\n",
            mode,(unsigned)(avr->pc/2),(uint64_t)avr->cycle);
     avr_terminate(avr);
