@@ -364,19 +364,20 @@ _avr_timer_get_current_tcnt(
 	return 0;
 }
 
-/* Classic Timer1 high-byte CPU I/O accesses address a shared TEMP
- * register; they must not directly update the running 16-bit counter.
- * This first opt-in increment supports TCNT16 only, not OCR/ICR.
+/* ATmega328P opt-in 16-bit Timer1 high-byte CPU writes:
+ * TCNT1, OCR1A/B and ICR1 share ONE TEMP latch. A high-byte write stages
+ * TEMP without modifying committed storage; a low-byte write commits both.
  */
 static void
 avr_timer_tcnth_write(
         struct avr_t *avr, avr_io_addr_t addr, uint8_t value, void *param)
 {
     avr_timer_t *p = (avr_timer_t *)param;
+    const uint8_t committed = addr == p->r_tcnth
+        ? p->timer16_tcnt_committed_high : avr->data[addr];
     p->timer16_temp = value;
     avr_core_watch_write(avr, addr, value);
-    /* Keep the backing counter high separate from the byte just staged. */
-    avr->data[addr] = p->timer16_tcnt_committed_high;
+    avr->data[addr] = committed; /* staging must not modify backing */
 }
 
 static uint8_t
@@ -695,6 +696,8 @@ avr_timer_write_ocr(
 	/* check to see if the OCR values actually changed */
 	oldv = _timer_get_comp_ocr(avr, comp);
 	avr_core_watch_write(avr, addr, v);
+	if (comp->r_ocrh && (avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP))
+		avr->data[comp->r_ocrh] = timer->timer16_temp;
 
 	switch (timer->wgm_op_mode_kind) {
 		case avr_timer_wgm_normal:
@@ -733,6 +736,30 @@ avr_timer_write_ocr(
 			avr_timer_reconfigure(timer, 0);
 			break;
 	}
+}
+
+/* The CPU reads ICR1H from the same TEMP latch used by TCNT1.
+ * OCR1AH/BH are different: they read committed high-byte storage directly.
+ */
+static uint8_t
+avr_timer_icr_low_read(struct avr_t *avr, avr_io_addr_t addr, void *param)
+{
+	avr_timer_t *p = (avr_timer_t *)param;
+	p->timer16_temp = avr->data[p->r_icrh];
+	return avr_core_watch_read(avr, addr);
+}
+
+static void
+avr_timer_icr_low_write(struct avr_t *avr, avr_io_addr_t addr,
+                        uint8_t value, void *param)
+{
+	avr_timer_t *p = (avr_timer_t *)param;
+	/* ICR1 writes are legal only when it supplies TOP, per the datasheet. */
+	if (p->mode.top != avr_timer_wgm_reg_icr)
+		return;
+	avr_core_watch_write(avr, addr, value);
+	avr->data[p->r_icrh] = p->timer16_temp;
+	avr_timer_reconfigure(p, 0);
 }
 
 static void
@@ -1159,6 +1186,9 @@ avr_timer_init(
 
 		if (p->comp[compi].r_ocr) // not all timers have all comparators
 			avr_register_io_write(avr, p->comp[compi].r_ocr, avr_timer_write_ocr, &p->comp[compi]);
+		if (p->r_tcnth && p->comp[compi].r_ocrh &&
+				(avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP))
+			avr_register_io_write(avr, p->comp[compi].r_ocrh, avr_timer_tcnth_write, p);
 		if (p->comp[compi].foc.reg)
 			avr_register_io_write(avr, p->comp[compi].foc.reg, avr_timer_write_foc, p);
 	}
@@ -1168,6 +1198,12 @@ avr_timer_init(
 		(avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP)) {
 		avr_register_io_write(avr, p->r_tcnth, avr_timer_tcnth_write, p);
 		avr_register_io_read(avr, p->r_tcnth, avr_timer_tcnth_read, p);
+		if (p->r_icr && p->r_icrh) {
+			avr_register_io_write(avr, p->r_icrh, avr_timer_tcnth_write, p);
+			avr_register_io_read(avr, p->r_icrh, avr_timer_tcnth_read, p);
+			avr_register_io_write(avr, p->r_icr, avr_timer_icr_low_write, p);
+			avr_register_io_read(avr, p->r_icr, avr_timer_icr_low_read, p);
+		}
 	}
 
 	if (p->as2.reg) {
