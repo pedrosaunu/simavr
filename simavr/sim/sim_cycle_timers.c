@@ -254,3 +254,58 @@ avr_cycle_timer_process(
 	//	value passed here is returned unbounded, thus preserving original behavior.
 	return avr_cycle_timer_return_sleep_run_cycles_limited(avr, DEFAULT_SLEEP_CYCLES);
 }
+
+/*
+ * Clock-ordered replay of peripheral events crossed by a CPU instruction.
+ * A CPU store made visible at retirement_cycle must not cancel or alter a
+ * callback scheduled for an earlier clock. Dispatch each such callback at
+ * its scheduled clock so additional timers registered by the callback are
+ * positioned relative to the actual event edge, not the instruction end.
+ *
+ * A callback exactly at retirement_cycle is deliberately excluded: the
+ * CPU writeback occurs first at that edge, then the existing outer
+ * avr_cycle_timer_process() dispatches same-clock peripheral events.
+ * This tie-breaking convention is still experimental pending silicon
+ * verification. Only opted-in CPU I/O writes call this function.
+ */
+int
+avr_cycle_timer_process_before(
+        avr_t *avr,
+        avr_cycle_count_t retirement_cycle)
+{
+    avr_cycle_timer_pool_t *pool = &avr->cycle_timers;
+
+    if (retirement_cycle != avr->cycle)
+        return 0;
+
+    while (pool->timer && pool->timer->when < retirement_cycle) {
+        avr_cycle_timer_slot_p t = pool->timer;
+        avr_cycle_count_t when = t->when;
+
+        pool->timer = t->next;
+        t->next = NULL;
+
+        /* Advance the peripheral timeline at the event's real due clock.
+         * The guest instruction has not yet committed its I/O side effect.
+         */
+        avr->cycle = when;
+        do {
+            avr_cycle_count_t next = t->timer(avr, when, t->param);
+            if (next == TIMER_RESET) {
+                avr_reset(avr);
+                return 0; /* avr_reset() owns the cycle and pool now. */
+            }
+            when = next > when ? next : 0;
+        } while (when && when <= avr->cycle);
+
+        if (when)
+            avr_cycle_timer_insert(avr, when - avr->cycle,
+                                   t->timer, t->param);
+
+        QUEUE(pool->timer_free, t);
+    }
+
+    avr->cycle = retirement_cycle;
+    avr_cycle_timer_reset_sleep_run_cycles_limited(avr);
+    return 1;
+}
