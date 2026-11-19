@@ -64,8 +64,8 @@ RUN set -eux; \
       -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
       -o /tmp/weightos_pwm14_probe; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
-      /tmp/weightos_pwm14_probe /tmp/weightos_pwm14.bin --expect-known-red; \
-    echo 'PWM14_INDEPENDENT_SIMAVR_DIFFERENTIAL=EXPECTED_RED_NOT_ACCEPTED'
+      /tmp/weightos_pwm14_probe /tmp/weightos_pwm14.bin --strict; \
+    echo 'PWM14_INDEPENDENT_SIMAVR_REFERENCE=STRICT_PASS'
 
 
 # Independent PB0/ICP1 direct rising-edge / WGM0 / stopped Timer1 reference.
