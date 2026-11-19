@@ -1,0 +1,37 @@
+# Narrow, disposable CPU-visible Timer1 shared TEMP verification image.
+# Real simavr fork, official AVR GCC firmware, no GitHub Actions.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr ca-certificates \
+    > /tmp/dependencies.log 2>&1 && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+    make -C simavr RELEASE=1 all > /tmp/simavr-build.log 2>&1 || { tail -80 /tmp/simavr-build.log; exit 1; }; \
+    make -C tests RELEASE=1 all > /tmp/simavr-tests-build.log 2>&1 || { tail -80 /tmp/simavr-tests-build.log; exit 1; }; \
+    make -C tests RELEASE=1 run_tests > /tmp/simavr-regressions.log 2>&1 || { tail -80 /tmp/simavr-regressions.log; exit 1; }; \
+    echo SIMAVR_NATIVE_REGRESSIONS_PASS
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -x assembler-with-cpp tests/weightos_timer1_temp.S -o /tmp/tcnt.elf; \
+    avr-objcopy -O binary -j .text /tmp/tcnt.elf /tmp/tcnt.bin; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_timer1_temp_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/tcnt_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/tcnt_probe /tmp/tcnt.bin --strict; \
+    echo TIMER1_TCNT_HISTORICAL_PASS
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e=start \
+      -x assembler-with-cpp tests/weightos_timer1_shared_temp.S -o /tmp/shared.elf; \
+    avr-objcopy -O binary -j .text /tmp/shared.elf /tmp/shared.bin; \
+    sha256sum /tmp/shared.bin; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_timer1_shared_temp_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/shared_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/shared_probe /tmp/shared.bin --strict; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/shared_probe /tmp/shared.bin --negative-ocr; then exit 71; fi; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/shared_probe /tmp/shared.bin --negative-icr; then exit 72; fi; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/shared_probe /tmp/shared.bin --negative-temp; then exit 73; fi; \
+    echo TIMER1_SHARED_TEMP_STRICT_AND_NEGATIVES_PASS
+CMD ["/bin/sh","-c","echo TIMER1_SHARED_TEMP_EXECUTION_COMPLETE; exit 0"]
