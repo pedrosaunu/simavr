@@ -222,6 +222,11 @@ typedef struct avr_timer_t {
 	 */
 	uint8_t		timer16_temp;
 	uint8_t		timer16_tcnt_committed_high;
+	/* CPU ICR1H reads return TEMP; sim_core writes that visible value to
+	 * avr->data[ICR1H]. Preserve the independently committed ICR high
+	 * byte so a later ICR1L read and timer TOP lookup stay correct.
+	 */
+	uint8_t		timer16_icr_committed_high;
 
 } avr_timer_t;
 
