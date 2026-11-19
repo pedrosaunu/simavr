@@ -67,4 +67,23 @@ RUN set -eux; \
       /tmp/weightos_pwm14_probe /tmp/weightos_pwm14.bin --expect-known-red; \
     echo 'PWM14_INDEPENDENT_SIMAVR_DIFFERENTIAL=EXPECTED_RED_NOT_ACCEPTED'
 
+
+# Independent PB0/ICP1 direct rising-edge / WGM0 / stopped Timer1 reference.
+# Guest firmware itself reads ICR1L/H and TIFR1 into r17..r19.
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -x assembler-with-cpp tests/weightos_timer1_capture.S \
+      -o /tmp/weightos_timer1_capture.elf; \
+    avr-objcopy -O binary -j .text \
+      /tmp/weightos_timer1_capture.elf /tmp/weightos_timer1_capture.bin; \
+    sha256sum /tmp/weightos_timer1_capture.bin; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_timer1_capture_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+      -o /tmp/weightos_timer1_capture_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+      /tmp/weightos_timer1_capture_probe /tmp/weightos_timer1_capture.bin --observe; \
+    echo 'ICP1_INDEPENDENT_SIMAVR_OBSERVATION=RECORDED_PENDING_CLASSIFICATION'
+
+
 CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
