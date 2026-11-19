@@ -313,8 +313,11 @@ another:
 		 * This is an incremental classic-AVR model; other interrupt
 		 * controllers and sleep wake-up timing require separate tests.
 		 */
-		avr->cycle += 2 + avr->address_size;
-		avr_cycle_timer_process(avr);
+		/* Ablation: hold other cores at pre-experiment interrupt timing. */
+		if (!strcmp(avr->mmcu, "atmega328")) {
+			avr->cycle += 2 + avr->address_size;
+			avr_cycle_timer_process(avr);
+		}
 	}
 }
 
