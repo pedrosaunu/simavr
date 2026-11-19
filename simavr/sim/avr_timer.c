@@ -785,6 +785,17 @@ avr_timer_write(
 	// this prevent the timer reset when changing the edge detector
 	// or other minor bits
 	if (new_cs != cs || new_mode != mode || new_as2 != as2) {
+		/* CPU may configure WGM while Timer1 is stopped. Previously the
+		 * early CS=0 return left p->mode stale, wrongly rejecting valid
+		 * ICR1 TOP writes. Restrict this correction to opt-in 16-bit cores.
+		 */
+		if (p->r_tcnth &&
+			(avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP) &&
+			new_cs == 0) {
+			p->mode = p->wgm_op[new_mode];
+			p->wgm_op_mode_kind = p->mode.kind;
+			p->wgm_op_mode_size = (1 << p->mode.size) - 1;
+		}
 	/* cs */
 		if (new_cs == 0) {
 			if (p->r_tcnth &&
