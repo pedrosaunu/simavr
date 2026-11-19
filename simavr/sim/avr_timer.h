@@ -216,6 +216,13 @@ typedef struct avr_timer_t {
 	uint16_t	sync_hold_tcnt;
 	uint64_t	sync_epoch;
 
+	/* Opted-in classic 16-bit CPU access support. TEMP is the shared
+	 * transient high byte; committed high belongs to the TCNT counter.
+	 * OCR/ICR sharing is a separate acceptance increment.
+	 */
+	uint8_t		timer16_temp;
+	uint8_t		timer16_tcnt_committed_high;
+
 } avr_timer_t;
 
 void avr_timer_init(avr_t * avr, avr_timer_t * port);
