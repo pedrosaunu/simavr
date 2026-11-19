@@ -99,8 +99,8 @@ RUN set -eux; \
       /tmp/edge_probe /tmp/edge.bin --strict; \
     echo 'EDGE_ORDER_STRICT=PASS'
 
-# Data-sheet-derived 16-bit high-byte TEMP transaction, intentionally
-# observational until its initial outcome has been independently verified.
+# Data-sheet-derived 16-bit high-byte TEMP transaction, strict acceptance
+# for a stopped ATmega328P Timer1. Live counting/OCR/ICR unverified.
 RUN set -eux; \
     avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
       -x assembler-with-cpp tests/weightos_timer1_temp.S \
@@ -112,7 +112,7 @@ RUN set -eux; \
       -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
       -o /tmp/timer1_temp_probe; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
-      /tmp/timer1_temp_probe /tmp/timer1_temp.bin --observe; \
-    echo 'TIMER1_TEMP_RESULT=OBSERVED_NOT_ACCEPTED'
+      /tmp/timer1_temp_probe /tmp/timer1_temp.bin --strict; \
+    echo 'TIMER1_TEMP_STRICT=PASS'
 
 CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
