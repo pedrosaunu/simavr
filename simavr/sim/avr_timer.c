@@ -762,6 +762,18 @@ avr_timer_write(
  * This is intentionally separate from Timer2's asynchronous PSRASY input.
  */
 /*
+ * A stopped timer has no running overflow schedule. Its guest-written TCNT
+ * register remains valid, even if _avr_timer_get_current_tcnt would return 0.
+ */
+static uint16_t
+avr_timer_sync_current(avr_timer_t *t)
+{
+	if (!t->cs_div_value || !t->tov_cycles)
+		return _timer_get_tcnt(t);
+	return _avr_timer_get_current_tcnt(t);
+}
+
+/*
  * Reset the shared divider while preserving the current TCNT value.
  * Used for the PSRSYNC strobe outside TSM; the same epoch is applied
  * to every timer in the synchronous group.
@@ -771,7 +783,7 @@ avr_timer_sync_reset(avr_t *avr, avr_timer_t *t)
 {
 	if (t->sync_holding)
 		return;
-	uint16_t counter = _avr_timer_get_current_tcnt(t);
+	uint16_t counter = avr_timer_sync_current(t);
 	t->sync_epoch = avr->cycle;
 	avr_timer_reconfigure(t, 1);
 	if (t->tov_cycles > 1) {
@@ -786,7 +798,7 @@ avr_timer_sync_hold(avr_t *avr, avr_timer_t *t, int hold)
 {
 	if (hold) {
 		if (!t->sync_holding) {
-			t->sync_hold_tcnt = _avr_timer_get_current_tcnt(t);
+			t->sync_hold_tcnt = avr_timer_sync_current(t);
 			t->sync_holding = 1;
 		}
 		avr_timer_cancel_all_cycle_timers(avr, t, 0);
