@@ -1,12 +1,20 @@
 # ATmega328P shared prescaler: native regression reproducer
 
-## Status
+## Status (2026-11-19)
 
-This branch now includes a **candidate implementation** in avr_timer.c,
-avr_timer.h and sim_megax8.h, plus three independent native regressions.
-It is NOT accepted yet: the new library has not passed a fresh native
-build-and-test run. Do not merge or submit a ready-for-review upstream PR
-until the full validation gate is green.
+This branch includes the **candidate** shared synchronous prescaler fix in
+`avr_timer.c`, `avr_timer.h` and `sim_megax8.h`, together with **five**
+ATmega328P native regressions. A fresh independent Linux source build and
+native test run **passed 29/29 tests**, including the staggered start phase
+cases, without using GitHub Actions.
+
+The run used a disposable Railway build of branch
+`test/weightos-railway-prescaler-gate` at
+`cf58418cb234742a66d875088a011039beb58e1b`. This test branch was
+based on the fix and provided a Dockerfile plus WeightOS fixture probes.
+The new native phase regression is also committed directly on the fix branch.
+**Do not yet open a ready-for-review upstream PR**: physical timing,
+PWM/CTC, Timer2 PSRASY and cross-device behavior are not fully validated.
 
 ## What the test proves
 
@@ -107,19 +115,26 @@ job logs. This is **NOT a C build or functional-test result**; do not
 diagnose it as a compiler error. The Actions/billing/runner-provisioning
 restriction must be resolved independently before interpreting CI as pass/fail.
 
-The four host-side regressions currently demonstrate **RED on the unmodified
-upstream Linux CI library**, not GREEN on a rebuilt fork library:
+The four original host-side regressions demonstrated **RED** against the
+official 2026-10-13 upstream library. A fresh source build of the patched
+fork independently demonstrated **GREEN**, and a fifth native regression
+confirmed the shared divider phase when Timer0/Timer1 start at different
+CPU cycles:
 
-1. TSM hold: Timer0/Timer1 advance from 4 to 15 while held.
-2. TSM release: same frozen-counter violation before release.
-3. TCNT writes during TSM: original simulator observes TCNT0=33 instead of
-   the guest-written 32.
-4. PSRSYNC while timers stopped: GTCCR reads back the strobe bit as 1 rather
-   than self-clearing it.
+- Staggered /8 probes: original `TCNT0/TCNT1L=1/0` and `2/1`;
+  corrected fork `1/1` and `2/2` using the same guest AVR code
+- `GTCCR.PSRSYNC`: original remains `1`; corrected fork self-clears to `0`
+- Native library suite: **29 passed, 0 failed**, compiled with GCC/AVR-GCC
+  in a Debian-based isolated Railway build without GitHub Actions
+- WeightOS v1.26 repeated-IRQ probe: **13 vectors (7 Timer0, 6 Timer1)**,
+  with exactly the same event-cycle and saved-return-PC values as the
+  original `simavr`. This patch does **not** fix the separate Timer1
+  repeated-interrupt timing discrepancy because that firmware uses /1
 
-The current code is a **candidate**, not a verified patch or upstream PR.
-Its shared epoch alignment, zero-clock behavior, overflow, PWM/CTC, Timer2
-PSRASY and cross-device regressions still require actual execution.
+The source-build verification is **not** a silicon timing measurement, and
+the fork has not passed exhaustive PWM/CTC/overflow and cross-device tests.
+Preserve the upstream version as an independent reference; do not replace
+the WeightOS temporal oracle solely with the corrected fork.
 
 ## Requirements for the eventual fix
 
