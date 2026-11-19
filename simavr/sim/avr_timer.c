@@ -324,7 +324,14 @@ avr_timer_tov(
 		}
 	}
 
-	if (!start)
+	/* A CTC TOP clear is NOT a 16-bit overflow when TOP < MAX.
+	 * TOV1 is raised only at natural counter wrap (TOP=0xffff).
+	 * Keep this correction scoped to the opted-in classic Timer1 path.
+	 */
+	const uint8_t is_classic16 = p->r_tcnth &&
+		(avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP);
+	if (!start && !(is_classic16 &&
+		p->wgm_op_mode_kind == avr_timer_wgm_ctc && p->tov_top < 0xffff))
 		avr_raise_interrupt(avr, &p->overflow);
 	p->tov_base = when;
 
