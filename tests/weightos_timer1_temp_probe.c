@@ -10,8 +10,10 @@
 
 int main(int argc,char **argv) {
     if(argc!=3 || (strcmp(argv[2],"--strict") &&
-                     strcmp(argv[2],"--observe"))) {
-        fprintf(stderr,"usage: %s firmware.bin --strict|--observe\n",argv[0]);
+                     strcmp(argv[2],"--observe") &&
+                     strcmp(argv[2],"--negative-high") &&
+                     strcmp(argv[2],"--negative-low"))) {
+        fprintf(stderr,"usage: %s firmware.bin --strict|--observe|--negative-high|--negative-low\n",argv[0]);
         return 2;
     }
     FILE *f=fopen(argv[1],"rb");
@@ -33,7 +35,10 @@ int main(int argc,char **argv) {
         const int status=avr_run(a);
         if(status!=cpu_Running) break;
     }
-    const uint8_t expected[6]={0x34,0x12,0x78,0x12,0xcd,0xab};
+    uint8_t expected[6]={0x34,0x12,0x78,0x12,0xcd,0xab};
+    /* Deliberate one-byte mutations must make the strict comparator fail. */
+    if (!strcmp(argv[2],"--negative-high")) expected[1] ^= 1;
+    if (!strcmp(argv[2],"--negative-low")) expected[0] ^= 1;
     unsigned mismatches=0;
     for(unsigned i=0;i<6;i++) {
         const unsigned actual=a->data[17+i];
