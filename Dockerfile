@@ -49,4 +49,22 @@ RUN set -eux; \
       /tmp/weightos_timer1_v126_probe /tmp/timer1_only_v126.bin --strict; \
     echo 'IRQ_STRICT_TIMER1_RESULT=PASS'
 
+
+# Independent direct WGM14 simulator pin observation; diagnostic only.
+# Mode 14: ICR1=3, OCR1A=1, OCR1B=2, PB1/PB2 configured as outputs.
+# The simulator's public port state is measured after guest CPU startup.
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -x assembler-with-cpp tests/weightos_timer1_pwm14.S \
+      -o /tmp/weightos_pwm14.elf; \
+    avr-objcopy -O binary -j .text /tmp/weightos_pwm14.elf /tmp/weightos_pwm14.bin; \
+    sha256sum /tmp/weightos_pwm14.bin; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_timer1_pwm14_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+      -o /tmp/weightos_pwm14_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+      /tmp/weightos_pwm14_probe /tmp/weightos_pwm14.bin; \
+    echo 'PWM14_INDEPENDENT_SIMAVR_OBSERVATION=RECORDED_NOT_YET_ACCEPTED'
+
 CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
