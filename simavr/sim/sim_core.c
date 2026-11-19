@@ -383,7 +383,8 @@ typedef struct {
 static inline void
 _avr_cpu_store(avr_t *avr, avr_cpu_writeback_t *wb, uint16_t addr, uint8_t value)
 {
-    if (addr >= 32 && addr <= avr->ioend) {
+    if ((avr->cpu_timing_features & AVR_CPU_TIMING_IO_WRITEBACK) &&
+            addr >= 32 && addr <= avr->ioend) {
         wb->pending = 1;
         wb->address = addr;
         wb->value = value;
