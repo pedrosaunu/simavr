@@ -197,6 +197,7 @@ typedef void (*avr_run_t)(
 enum {
 	AVR_CPU_TIMING_IO_WRITEBACK = 1u << 0,
 	AVR_CPU_TIMING_IRQ_ENTRY = 1u << 1,
+	AVR_CPU_TIMING_TIMER16_TEMP = 1u << 2,
 };
 
 typedef struct avr_t {
