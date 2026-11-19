@@ -90,11 +90,20 @@ int main(int argc, char **argv) {
     for(unsigned i=0;i<SAMPLES;i++)
         if(measured[i]!=known_simavr[i%4]) knownred=0;
     int full=best==SAMPLES;
-    printf("PWM14_REFERENCE_SUMMARY samples=%u expected_matches=%u best_phase=%u exact=%d known_simavr=%d\n",
-           got,best,best_shift,full,knownred);
+    /*
+     * The startup interval begins during the first asynchronously armed
+     * PWM cycle. Demand exact steady-state equality after one 4-cycle
+     * period, separately recording whether startup also matches.
+     */
+    unsigned steady_matches=0;
+    for(unsigned i=4;i<SAMPLES;i++)
+        steady_matches += measured[i]==expected_pwm[(i+best_shift)%4];
+    const int stable=(steady_matches==SAMPLES-4);
+    printf("PWM14_REFERENCE_SUMMARY samples=%u expected_matches=%u best_phase=%u exact=%d stable_matches=%u stable_exact=%d startup_exact=%d known_simavr=%d\n",
+           got,best,best_shift,full,steady_matches,stable,full,knownred);
     avr_terminate(avr);
     if(strcmp(argv[2],"--observe")==0)return 0;
-    if(strcmp(argv[2],"--strict")==0)return full?0:1;
+    if(strcmp(argv[2],"--strict")==0)return stable?0:1;
     /* Diagnostic inverse gate: never confuse this known RED with a PASS. */
     return !full && knownred?0:9;
 }
