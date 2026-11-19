@@ -22,7 +22,7 @@ typedef struct {
     uint8_t write_value;
 } observer_t;
 
-static avr_cycle_count_t event(avr_t *a, avr_cycle_count_t when, void *arg) {
+static avr_cycle_count_t event_common(avr_t *a, avr_cycle_count_t when, void *arg) {
     observer_t *o = (observer_t *)arg;
     const unsigned i=o->ticks++;
     if (i < 2) {
@@ -34,6 +34,13 @@ static avr_cycle_count_t event(avr_t *a, avr_cycle_count_t when, void *arg) {
            i + 1, (unsigned long long)when,
            (unsigned long long)a->cycle, (unsigned)a->data[ADDR]);
     return 0;
+}
+
+static avr_cycle_count_t event_before(avr_t *a, avr_cycle_count_t when, void *arg) {
+    return event_common(a,when,arg);
+}
+static avr_cycle_count_t event_after(avr_t *a, avr_cycle_count_t when, void *arg) {
+    return event_common(a,when,arg);
 }
 
 static void write_io(avr_t *a, avr_io_addr_t addr, uint8_t v, void *arg) {
@@ -68,8 +75,8 @@ int main(int argc,char **argv) {
     avr_loadcode(a,fw,(uint32_t)n,0);
     observer_t o={0};
     avr_register_io_write(a, ADDR,write_io,&o);
-    avr_cycle_timer_register(a,2,event,&o);
-    avr_cycle_timer_register(a,4,event,&o);
+    avr_cycle_timer_register(a,2,event_before,&o);
+    avr_cycle_timer_register(a,4,event_after,&o);
     for(unsigned step=0;step<20 && (o.ticks<2||o.writes<1);step++) {
         if(avr_run(a)!=cpu_Running) break;
     }
