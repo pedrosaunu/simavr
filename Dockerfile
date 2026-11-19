@@ -76,4 +76,12 @@ RUN set -eux; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
       /tmp/io_retirement_probe /tmp/io_retirement.bin
 
+# Independent classic AVR 2/3-byte interrupt-entry latency and stack check.
+RUN set -eux; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror \
+      -Isimavr/sim tests/weightos_irq_width_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+      -o /tmp/weightos_irq_width_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/weightos_irq_width_probe
+
 CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
