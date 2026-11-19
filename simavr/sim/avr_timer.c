@@ -295,6 +295,31 @@ avr_timer_irq_ext_clock(
 }
 
 // timer overflow
+/*
+ * WGM14 Fast PWM: TOP is reached one tick before the counter returns to
+ * BOTTOM. OC1A/OC1B non-inverting outputs are set on the BOTTOM transition,
+ * whereas TOV1 is signalled at TOP. Keep this delayed output action distinct
+ * from the overflow/compare scheduling and do not apply it to other modes.
+ */
+static avr_cycle_count_t
+avr_timer_wgm14_bottom(
+        struct avr_t *avr,
+        avr_cycle_count_t when,
+        void *param)
+{
+    avr_timer_t *p = (avr_timer_t *)param;
+    if (p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
+            p->mode.top == avr_timer_wgm_reg_icr &&
+            p->cs_div_value && p->tov_cycles) {
+        for (int compi=0; compi < AVR_TIMER_COMP_COUNT; compi++) {
+            if (p->comp[compi].comp_cycles &&
+                    p->comp[compi].comp_cycles < p->tov_cycles)
+                avr_timer_comp_on_tov(p, when, compi);
+        }
+    }
+    return 0;
+}
+
 static avr_cycle_count_t
 avr_timer_tov(
 		struct avr_t * avr,
@@ -327,7 +352,18 @@ avr_timer_tov(
 	for (int compi = 0; compi < AVR_TIMER_COMP_COUNT; compi++) {
 		if (p->comp[compi].comp_cycles) {
 			if (p->comp[compi].comp_cycles < p->tov_cycles && p->comp[compi].comp_cycles >= (avr->cycle - when)) {
-				avr_timer_comp_on_tov(p, when, compi);
+                /*
+                 * Mode 14 uses the ICR1 TOP event one clock before BOTTOM.
+                 * Arm one BOTTOM callback for the whole pair of OC pins,
+                 * but leave compare A/B scheduling on its original clock.
+                 */
+                if (p->wgm_op_mode_kind != avr_timer_wgm_fast_pwm ||
+                        p->mode.top != avr_timer_wgm_reg_icr)
+                    avr_timer_comp_on_tov(p, when, compi);
+                else if (compi == 0 && !start)
+                    avr_cycle_timer_register(avr, 1, avr_timer_wgm14_bottom, p);
+                else if (start)
+                    avr_timer_comp_on_tov(p, when, compi);
 				avr_cycle_timer_register(avr,
 					p->comp[compi].comp_cycles - (avr->cycle - next),
 					dispatch[compi], p);
@@ -397,6 +433,7 @@ avr_timer_cancel_all_cycle_timers(
 	avr_cycle_timer_cancel(avr, avr_timer_compa, timer);
 	avr_cycle_timer_cancel(avr, avr_timer_compb, timer);
 	avr_cycle_timer_cancel(avr, avr_timer_compc, timer);
+	avr_cycle_timer_cancel(avr, avr_timer_wgm14_bottom, timer);
 }
 
 static void
