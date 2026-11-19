@@ -582,6 +582,11 @@ avr_timer_reconfigure(
 
 	// cancel everything
 	avr_timer_cancel_all_cycle_timers(avr, p, 1);
+	/* Keep all modes inert while the synchronous prescaler is held.
+	 * On release GTCCR reconfigures the latest WGM/CS/OCR settings.
+	 */
+	if (p->sync_holding)
+		return;
 
 	switch (p->wgm_op_mode_kind) {
 		case avr_timer_wgm_normal:
@@ -613,9 +618,6 @@ avr_timer_reconfigure(
 					__FUNCTION__, p->name, mode, p->mode.kind);
 		}
 	}
-	/* No scheduled timer event may advance during TSM|PSRSYNC. */
-	if (p->sync_holding)
-		avr_timer_cancel_all_cycle_timers(avr, p, 0);
 }
 
 static void
