@@ -309,7 +309,7 @@ another:
 		 * without executing a guest opcode. Keep this implementation on
 		 * the disposable IRQ-timing experiment branch.
 		 */
-		if (!strcmp(avr->mmcu, "atmega328p")) {
+		if ((!strcmp(avr->mmcu, "atmega328") || !strcmp(avr->mmcu, "atmega328p"))) {
 			avr->cycle += 4;
 			avr_cycle_timer_process(avr);
 		}
