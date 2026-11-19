@@ -34,4 +34,19 @@ RUN set -eux; \
     if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/shared_probe /tmp/shared.bin --negative-icr; then exit 72; fi; \
     if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/shared_probe /tmp/shared.bin --negative-temp; then exit 73; fi; \
     echo TIMER1_SHARED_TEMP_STRICT_AND_NEGATIVES_PASS
+# Exact 15-instruction WeightOS v1.28 guest, accepted recurrent fixture.
+# Instruction bytes are compared by SHA-256, not inferred from source comments.
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -x assembler-with-cpp tests/weightos_v128_exact_guest.S -o /tmp/exact_v128.elf; \
+    avr-objcopy -O binary -j .text /tmp/exact_v128.elf /tmp/exact_v128.bin; \
+    echo '10766ac960e63ac09df30784cc0206bb0d711ffd5e71eb68da966a82fcb284d1  /tmp/exact_v128.bin' | sha256sum -c -; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_v128_exact_guest_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/exact_v128_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/exact_v128_probe /tmp/exact_v128.bin --strict; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/exact_v128_probe /tmp/exact_v128.bin --negative-r17; then exit 75; fi; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/exact_v128_probe /tmp/exact_v128.bin --negative-r18; then exit 76; fi; \
+    echo WEIGHTOS_V128_EXACT_GUEST_SIMAVR_GPRS=PASS
+
 CMD ["/bin/sh","-c","echo TIMER1_SHARED_TEMP_EXECUTION_COMPLETE; exit 0"]
