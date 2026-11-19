@@ -1,5 +1,6 @@
-# Ephemeral OBSERVATION-ONLY runner for a nonapproved IRQ timing experiment.
-# A successful Docker build is not a passing conformance gate.
+# Fail-closed independent simulator gate for the isolated Timer1 IRQ test.
+# A PASS only means agreement with the pinned six-vector scalar oracle.
+# It is not physical silicon or full Timer1 qualification.
 FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -10,20 +11,14 @@ COPY . .
 RUN set -eux; \
     make -C simavr RELEASE=1 all; \
     make -C tests RELEASE=1 all; \
-    if make -C tests RELEASE=1 run_tests; then \
-      echo 'IRQ_EXPERIMENT_NATIVE_REGRESSIONS=PASS'; \
-    else \
-      echo 'IRQ_EXPERIMENT_NATIVE_REGRESSIONS=FAIL'; \
-    fi
+    make -C tests RELEASE=1 run_tests; \
+    echo 'IRQ_STRICT_NATIVE_REGRESSIONS=PASS'
 RUN set -eux; \
     cc -std=c11 -O2 -Wall -Wextra -Werror \
     -Isimavr/sim tests/weightos_v126_irq_probe.c \
     -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/weightos_v126_probe; \
-    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/weightos_v126_probe; then \
-      echo 'IRQ_EXPERIMENT_V126_DUAL_TIMER=PASS'; \
-    else \
-      echo 'IRQ_EXPERIMENT_V126_DUAL_TIMER=FAIL'; \
-    fi
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/weightos_v126_probe; \
+    echo 'IRQ_STRICT_V126_DUAL_TIMER=PASS'
 RUN set -eux; \
     cc -std=c11 -O2 -Wall -Wextra -Werror \
     -Isimavr/sim tests/weightos_shared_phase_probe.c \
@@ -51,7 +46,7 @@ RUN set -eux; \
       -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
       -o /tmp/weightos_timer1_v126_probe; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
-      /tmp/weightos_timer1_v126_probe /tmp/timer1_only_v126.bin --observe; \
-    echo 'IRQ_EXPERIMENT_TIMER1_RESULT=OBSERVED_NOT_ACCEPTED'
+      /tmp/weightos_timer1_v126_probe /tmp/timer1_only_v126.bin --strict; \
+    echo 'IRQ_STRICT_TIMER1_RESULT=PASS'
 
 CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
