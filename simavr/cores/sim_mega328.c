@@ -36,7 +36,8 @@ static avr_t * make()
 	avr_t *core = avr_core_allocate(&SIM_CORENAME.core, sizeof(struct mcu_t));
 	if (core)
 		core->cpu_timing_features = AVR_CPU_TIMING_IO_WRITEBACK |
-							   AVR_CPU_TIMING_IRQ_ENTRY;
+							   AVR_CPU_TIMING_IRQ_ENTRY |
+							   AVR_CPU_TIMING_TIMER16_TEMP;
 	return core;
 }
 
