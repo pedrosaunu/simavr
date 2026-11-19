@@ -113,6 +113,10 @@ RUN set -eux; \
       -o /tmp/timer1_temp_probe; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
       /tmp/timer1_temp_probe /tmp/timer1_temp.bin --strict; \
-    echo 'TIMER1_TEMP_STRICT=PASS'
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+      /tmp/timer1_temp_probe /tmp/timer1_temp.bin --negative-high; then exit 73; fi; \
+    if LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+      /tmp/timer1_temp_probe /tmp/timer1_temp.bin --negative-low; then exit 74; fi; \
+    echo 'TIMER1_TEMP_STRICT_AND_MUTATIONS=PASS'
 
 CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
