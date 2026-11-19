@@ -2,8 +2,11 @@
 
 ## Status
 
-This branch currently contains a **failing test**, not a fix. Please do not merge
-or open a ready-for-review upstream PR before the timer implementation is corrected.
+This branch now includes a **candidate implementation** in avr_timer.c,
+avr_timer.h and sim_megax8.h, plus three independent native regressions.
+It is NOT accepted yet: the new library has not passed a fresh native
+build-and-test run. Do not merge or submit a ready-for-review upstream PR
+until the full validation gate is green.
 
 ## What the test proves
 
@@ -73,6 +76,33 @@ pairs at \`4->15\` during the hold. This proves that an implementation which
 only freezes the counters but never resumes them will not satisfy the
 regression suite.
 
+
+## Additional regression and current implementation scope
+
+- `atmega328p_tsm_configure.S` and `test_atmega328p_tsm_configure.c`
+  require TCNT0 and TCNT1 to accept writes while suspended, remain stable
+  during an 80-NOP hold, and resume after release. The exact embedded binary
+  was generated using LLVM AVR and the baseline official library fails it.
+- The implementation records the shared synchronization epoch and uses it
+  to align Timer0 and Timer1 when started at different cycles. It holds
+  timer event scheduling during TSM, preserves TCNT values, and handles
+  standalone PSRSYNC reset as a strobe.
+- **Important limitation:** PSRASY / Timer2 asynchronous reset is not
+  implemented by this candidate. Regressions across this and other chip
+  families must pass before any upstream PR.
+
+## How the candidate will be tested
+
+A dedicated Linux workflow is present at
+`.github/workflows/atmega328p-prescaler-regression.yml`. It checks out
+the **fork branch**, builds libsimavr from source, and runs the repository's
+native tests. It uses one standard public-repository Linux runner, with a
+12-minute job timeout and read-only token.
+
+GitHub disables workflows by default on newly created forks. At this point
+the fork's Actions API reports **zero runs**. Please activate Actions in
+the fork's Actions tab if it is disabled. Without a green rebuild, the
+candidate is **not verified**.
 
 ## Requirements for the eventual fix
 
