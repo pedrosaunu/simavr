@@ -922,7 +922,13 @@ avr_timer_irq_icp(
 	if (!bing)
 		return;
 	// get current TCNT, copy it to ICR, and raise interrupt
-	uint16_t tcnt = _avr_timer_get_current_tcnt(p);
+	/* Input capture reads the CPU-visible counter, including while stopped
+	 * or held by TSM. The running-count helper returns zero without an
+	 * overflow schedule; it is unsuitable for a stopped Timer1 capture.
+	 */
+	uint16_t tcnt = p->sync_holding ? p->sync_hold_tcnt :
+		(!p->cs_div_value || !p->tov_cycles) ? _timer_get_tcnt(p) :
+		_avr_timer_get_current_tcnt(p);
 	avr->data[p->r_icr] = tcnt;
 	if (p->r_icrh)
 		avr->data[p->r_icrh] = tcnt >> 8;
