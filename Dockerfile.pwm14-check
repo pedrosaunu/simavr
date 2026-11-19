@@ -1,0 +1,31 @@
+# Fail-closed independent simulator gate for the isolated Timer1 IRQ test.
+# A PASS only means agreement with the pinned six-vector scalar oracle.
+# It is not physical silicon or full Timer1 qualification.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev \
+    gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; make -C simavr RELEASE=1 all;
+# Independent direct WGM14 simulator pin observation; diagnostic only.
+# Mode 14: ICR1=3, OCR1A=1, OCR1B=2, PB1/PB2 configured as outputs.
+# The simulator's public port state is measured after guest CPU startup.
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -x assembler-with-cpp tests/weightos_timer1_pwm14.S \
+      -o /tmp/weightos_pwm14.elf; \
+    avr-objcopy -O binary -j .text /tmp/weightos_pwm14.elf /tmp/weightos_pwm14.bin; \
+    sha256sum /tmp/weightos_pwm14.bin; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_timer1_pwm14_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+      -o /tmp/weightos_pwm14_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+      /tmp/weightos_pwm14_probe /tmp/weightos_pwm14.bin --strict; \
+    echo 'PWM14_INDEPENDENT_SIMAVR_REFERENCE=STRICT_PASS'
+
+
+
+CMD ["/bin/sh","-c","exit 0"]
