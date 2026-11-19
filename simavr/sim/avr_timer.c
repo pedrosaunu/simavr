@@ -72,8 +72,11 @@ static uint16_t
 _timer_get_icr(
 		avr_timer_t * p)
 {
-	return p->io.avr->data[p->r_icr] |
-				(p->r_tcnth ? (p->io.avr->data[p->r_icrh] << 8) : 0);
+	const uint8_t high = (p->r_icrh &&
+		(p->io.avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP))
+		? p->timer16_icr_committed_high
+		: (p->r_icrh ? p->io.avr->data[p->r_icrh] : 0);
+	return p->io.avr->data[p->r_icr] | ((uint16_t)high << 8);
 }
 static avr_cycle_count_t
 avr_timer_comp(
@@ -374,7 +377,9 @@ avr_timer_tcnth_write(
 {
     avr_timer_t *p = (avr_timer_t *)param;
     const uint8_t committed = addr == p->r_tcnth
-        ? p->timer16_tcnt_committed_high : avr->data[addr];
+        ? p->timer16_tcnt_committed_high
+        : (addr == p->r_icrh ? p->timer16_icr_committed_high
+                            : avr->data[addr]);
     p->timer16_temp = value;
     avr_core_watch_write(avr, addr, value);
     avr->data[addr] = committed; /* staging must not modify backing */
@@ -385,9 +390,8 @@ avr_timer_tcnth_read(
         struct avr_t *avr, avr_io_addr_t addr, void *param)
 {
     (void)avr;
+    (void)addr;
     avr_timer_t *p = (avr_timer_t *)param;
-    fprintf(stderr, "WEIGHTOS_TIMER_DEBUG_HIGH addr=%u temp=%u\\n",
-            (unsigned)addr, (unsigned)p->timer16_temp);
     return p->timer16_temp;
 }
 
@@ -746,10 +750,11 @@ static uint8_t
 avr_timer_icr_low_read(struct avr_t *avr, avr_io_addr_t addr, void *param)
 {
 	avr_timer_t *p = (avr_timer_t *)param;
-	fprintf(stderr, "WEIGHTOS_TIMER_DEBUG_ICR_READ addr=%u committedHigh=%u before=%u\\n",
-            (unsigned)addr, (unsigned)avr->data[p->r_icrh],
-            (unsigned)p->timer16_temp);
-	p->timer16_temp = avr->data[p->r_icrh];
+	/* sim_core's generic readback overwrites avr->data[ICR1H] with the
+	 * CPU-visible TEMP value. Only this separate shadow is authoritative
+	 * for the committed ICR1H used by capture/TOP and low-byte reads.
+	 */
+	p->timer16_temp = p->timer16_icr_committed_high;
 	return avr_core_watch_read(avr, addr);
 }
 
@@ -762,7 +767,8 @@ avr_timer_icr_low_write(struct avr_t *avr, avr_io_addr_t addr,
 	if (p->mode.top != avr_timer_wgm_reg_icr)
 		return;
 	avr_core_watch_write(avr, addr, value);
-	avr->data[p->r_icrh] = p->timer16_temp;
+	p->timer16_icr_committed_high = p->timer16_temp;
+	avr->data[p->r_icrh] = p->timer16_icr_committed_high;
 	avr_timer_reconfigure(p, 0);
 }
 
@@ -1019,8 +1025,11 @@ avr_timer_irq_icp(
 	// get current TCNT, copy it to ICR, and raise interrupt
 	uint16_t tcnt = _avr_timer_get_current_tcnt(p);
 	avr->data[p->r_icr] = tcnt;
-	if (p->r_icrh)
+	if (p->r_icrh) {
 		avr->data[p->r_icrh] = tcnt >> 8;
+		if (avr->cpu_timing_features & AVR_CPU_TIMING_TIMER16_TEMP)
+			p->timer16_icr_committed_high = (uint8_t)(tcnt >> 8);
+	}
 	avr_raise_interrupt(avr, &p->icr);
 }
 
@@ -1079,6 +1088,7 @@ avr_timer_reset(
 	avr_timer_t * p = (avr_timer_t *)port;
 	p->timer16_temp = 0;
 	p->timer16_tcnt_committed_high = 0;
+	p->timer16_icr_committed_high = 0;
 	avr_timer_cancel_all_cycle_timers(p->io.avr, p, 0);
 
 	// check to see if the comparators have a pin output. If they do,
