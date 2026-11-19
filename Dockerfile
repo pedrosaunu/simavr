@@ -84,4 +84,19 @@ RUN set -eux; \
       -o /tmp/weightos_irq_width_probe; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/weightos_irq_width_probe
 
+# Strict negative control: current event dispatch is too late when a
+# two-cycle STS crosses a scheduled peripheral callback deadline.
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -x assembler-with-cpp tests/weightos_multicycle_edge.S \
+      -o /tmp/edge.elf; \
+    avr-objcopy -O binary -j .text /tmp/edge.elf /tmp/edge.bin; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror \
+      -Isimavr/sim tests/weightos_multicycle_edge_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+      -o /tmp/edge_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+      /tmp/edge_probe /tmp/edge.bin --expect-known-red; \
+    echo 'EDGE_ORDER_KNOWN_RED_REPRODUCED=PASS'
+
 CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
