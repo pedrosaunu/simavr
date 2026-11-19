@@ -13,6 +13,7 @@
 #include "tests.h"
 #include "sim_avr.h"
 #include <stdint.h>
+#include <stddef.h>
 
 static const uint8_t image3[292] = {
   [0]=0x7f,[1]=0xc0,[256]=0x02,[257]=0xe0,[258]=0x11,[259]=0xe0,
