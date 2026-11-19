@@ -385,8 +385,9 @@ avr_timer_tcnth_read(
         struct avr_t *avr, avr_io_addr_t addr, void *param)
 {
     (void)avr;
-    (void)addr;
     avr_timer_t *p = (avr_timer_t *)param;
+    fprintf(stderr, "WEIGHTOS_TIMER_DEBUG_HIGH addr=%u temp=%u\\n",
+            (unsigned)addr, (unsigned)p->timer16_temp);
     return p->timer16_temp;
 }
 
@@ -745,6 +746,9 @@ static uint8_t
 avr_timer_icr_low_read(struct avr_t *avr, avr_io_addr_t addr, void *param)
 {
 	avr_timer_t *p = (avr_timer_t *)param;
+	fprintf(stderr, "WEIGHTOS_TIMER_DEBUG_ICR_READ addr=%u committedHigh=%u before=%u\\n",
+            (unsigned)addr, (unsigned)avr->data[p->r_icrh],
+            (unsigned)p->timer16_temp);
 	p->timer16_temp = avr->data[p->r_icrh];
 	return avr_core_watch_read(avr, addr);
 }
