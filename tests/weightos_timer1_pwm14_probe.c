@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 enum { CAP=8192, SAMPLES=32 };
+static const unsigned expected_pwm[4]={0x06,0x04,0x00,0x00};
+static const unsigned known_simavr[4]={0x06,0x04,0x00,0x06};
 
 typedef struct {
     unsigned bit, level, updates;
@@ -24,7 +26,13 @@ static void pwm_pin_observe(struct avr_irq_t *irq, uint32_t value, void *param){
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2) { fprintf(stderr,"usage: %s firmware.bin\n",argv[0]); return 2; }
+    if(argc != 3 ||
+       (strcmp(argv[2],"--observe")!=0 &&
+        strcmp(argv[2],"--strict")!=0 &&
+        strcmp(argv[2],"--expect-known-red")!=0)) {
+        fprintf(stderr,"usage: %s firmware.bin --observe|--strict|--expect-known-red\n",argv[0]);
+        return 2;
+    }
     uint8_t image[CAP]={0};
     FILE *f=fopen(argv[1],"rb");
     if (!f) { perror(argv[1]); return 2; }
@@ -45,6 +53,7 @@ int main(int argc, char **argv) {
     avr_irq_register_notify(pa,pwm_pin_observe,&a);
     avr_irq_register_notify(pb,pwm_pin_observe,&b);
     unsigned got=0;
+    unsigned measured[SAMPLES]={0};
     unsigned long long prev=0;
     for(unsigned step=0; step<500 && got<SAMPLES; step++){
         int status=avr_run(avr);
@@ -63,13 +72,29 @@ int main(int argc, char **argv) {
             fprintf(stderr,"Non-single-cycle sampling gap %llu to %llu\n",prev,cycle);
             avr_terminate(avr); return 6;
         }
+        measured[got]=(a.level?2U:0U)|(b.level?4U:0U);
         printf("PWM14_PIN_SAMPLE i=%u cycle=%llu port=%02lx ddr=%02lx pin=%02lx irq=%02x\n",
                got,cycle,(unsigned long)port.port,(unsigned long)port.ddr,
                (unsigned long)port.pin,(a.level?2U:0U)|(b.level?4U:0U));
         prev=cycle;
         got++;
     }
-    printf("PWM14_PIN_SUMMARY samples=%u\n",got);
+    if(got!=SAMPLES){ avr_terminate(avr); return 7; }
+    unsigned best=0,best_shift=0,knownred=1;
+    for(unsigned shift=0;shift<4;shift++){
+        unsigned match=0;
+        for(unsigned i=0;i<SAMPLES;i++)
+            match += measured[i]==expected_pwm[(i+shift)%4];
+        if(match>best){best=match;best_shift=shift;}
+    }
+    for(unsigned i=0;i<SAMPLES;i++)
+        if(measured[i]!=known_simavr[i%4]) knownred=0;
+    int full=best==SAMPLES;
+    printf("PWM14_REFERENCE_SUMMARY samples=%u expected_matches=%u best_phase=%u exact=%d known_simavr=%d\n",
+           got,best,best_shift,full,knownred);
     avr_terminate(avr);
-    return got==SAMPLES?0:7;
+    if(strcmp(argv[2],"--observe")==0)return 0;
+    if(strcmp(argv[2],"--strict")==0)return full?0:1;
+    /* Diagnostic inverse gate: never confuse this known RED with a PASS. */
+    return !full && knownred?0:9;
 }
