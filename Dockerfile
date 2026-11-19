@@ -23,9 +23,11 @@ RUN set -eux; \
     -Isimavr/sim tests/weightos_shared_phase_probe.c \
     -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/weightos_phase; \
     for n in 3 11; do \
-      avr-gcc -mmcu=atmega328p -DNOP_COUNT=$n -x assembler-with-cpp -c \
-        tests/weightos_shared_phase.S -o /tmp/phase.o; \
-      avr-objcopy -O binary -j .text /tmp/phase.o /tmp/phase.bin; \
+      avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+        -DNOP_COUNT=$n -x assembler-with-cpp \
+        tests/weightos_shared_phase.S -o /tmp/phase.elf; \
+      avr-objcopy -O binary -j .text /tmp/phase.elf /tmp/phase.bin; \
+      test "$(od -An -tx1 -N2 /tmp/phase.bin | tr -d ' \\n')" = "7fc0"; \
       LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/weightos_phase /tmp/phase.bin $n; \
     done
 CMD ["/bin/sh","-c","echo WEIGHTOS_PRESCALER_BUILD_SUCCEEDED; exit 0"]
