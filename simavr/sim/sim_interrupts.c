@@ -313,8 +313,8 @@ another:
 		 * This is an incremental classic-AVR model; other interrupt
 		 * controllers and sleep wake-up timing require separate tests.
 		 */
-		/* Ablation: hold other cores at pre-experiment interrupt timing. */
-		if (!strcmp(avr->mmcu, "atmega328")) {
+		/* Only validated cores opt in; others retain their historic timing. */
+		if (avr->cpu_timing_features & AVR_CPU_TIMING_IRQ_ENTRY) {
 			avr->cycle += 2 + avr->address_size;
 			avr_cycle_timer_process(avr);
 		}
