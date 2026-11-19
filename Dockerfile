@@ -1,5 +1,5 @@
 # Ephemeral source-build acceptance runner for WeightOS/simavr validation.
-# GitHub Actions is not used. Any regression failure stops the build.
+# GitHub Actions is not used. Any native regression failure stops the build.
 FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -18,5 +18,14 @@ RUN set -eux; \
     -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/weightos_v126_probe; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/weightos_v126_probe; \
     echo 'WEIGHTOS_V126_FORK_IRQ_PROBE=PASS'
-# Build-only job; no running server required. Remove Railway service afterward.
+RUN set -eux; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror \
+    -Isimavr/sim tests/weightos_shared_phase_probe.c \
+    -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/weightos_phase; \
+    for n in 3 11; do \
+      avr-gcc -mmcu=atmega328p -DNOP_COUNT=$n -x assembler-with-cpp -c \
+        tests/weightos_shared_phase.S -o /tmp/phase.o; \
+      avr-objcopy -O binary -j .text /tmp/phase.o /tmp/phase.bin; \
+      LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/weightos_phase /tmp/phase.bin $n; \
+    done
 CMD ["/bin/sh","-c","echo WEIGHTOS_PRESCALER_BUILD_SUCCEEDED; exit 0"]
