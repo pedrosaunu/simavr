@@ -62,4 +62,18 @@ RUN set -eux; \
       /tmp/weightos_dual_strict --negative-return-pc; then exit 72; fi; \
     echo 'IRQ_EXPERIMENT_DUAL_NEURAL_DIFFERENTIAL=PASS'
 
+# Independently scheduled mapped-I/O bus edges, two classic AVR cores.
+RUN set -eux; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -x assembler-with-cpp tests/weightos_io_retirement.S \
+      -o /tmp/io_retirement.elf; \
+    avr-objcopy -O binary -j .text \
+      /tmp/io_retirement.elf /tmp/io_retirement.bin; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror \
+      -Isimavr/sim tests/weightos_io_retirement_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+      -o /tmp/io_retirement_probe; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+      /tmp/io_retirement_probe /tmp/io_retirement.bin
+
 CMD ["/bin/sh","-c","echo IRQ_EXPERIMENT_COMPLETE_NOT_CONFORMANCE; exit 0"]
