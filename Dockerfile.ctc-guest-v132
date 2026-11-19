@@ -1,0 +1,21 @@
+# Diagnostic only. Builds corrected fork and executes real AVR guest CTC firmware.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr ca-certificates \
+    > /tmp/dependencies.log 2>&1 && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+    make -C simavr RELEASE=1 all > /tmp/simavr-build.log 2>&1 || { tail -80 /tmp/simavr-build.log; exit 1; }; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_ctc_guest_v132_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/ctc_probe; \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -x assembler-with-cpp \
+      tests/weightos_ctc_guest_v132.S -o /tmp/ctc4.elf; \
+    avr-objcopy -O binary -j .text /tmp/ctc4.elf /tmp/ctc4.bin; \
+    avr-gcc -mmcu=atmega328p -DWGM12 -nostdlib -Wl,-e=start -x assembler-with-cpp \
+      tests/weightos_ctc_guest_v132.S -o /tmp/ctc12.elf; \
+    avr-objcopy -O binary -j .text /tmp/ctc12.elf /tmp/ctc12.bin; \
+    sha256sum /tmp/ctc4.bin /tmp/ctc12.bin
+CMD ["/bin/sh","-ec","LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/ctc_probe /tmp/ctc4.bin wgm4; LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/ctc_probe /tmp/ctc12.bin wgm12; echo CTC_GUEST_DIAGNOSTIC_COMPLETE"]
