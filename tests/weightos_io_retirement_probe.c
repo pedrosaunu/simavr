@@ -51,6 +51,25 @@ static int check_one(const char *mcu, const uint8_t *fw, size_t size)
         return 1;
     }
     a->frequency = 16000000;
+    if (!strcmp(mcu, "atmega328p")) {
+        const unsigned expected = AVR_CPU_TIMING_IO_WRITEBACK |
+                                  AVR_CPU_TIMING_IRQ_ENTRY;
+        if ((a->cpu_timing_features & expected) != expected) {
+            fprintf(stderr, "IO_RETIRE_ERROR atmega328p not opted in by core\n");
+            avr_terminate(a);
+            return 1;
+        }
+    } else if (!strcmp(mcu, "atmega2560")) {
+        if (a->cpu_timing_features != 0) {
+            fprintf(stderr, "IO_RETIRE_ERROR unexpected global timing change\n");
+            avr_terminate(a);
+            return 1;
+        }
+        /* Activate the exact same address-independent I/O mechanism for
+         * a controlled second core, without changing its factory default.
+         */
+        a->cpu_timing_features |= AVR_CPU_TIMING_IO_WRITEBACK;
+    }
     avr_register_io_write(a, IO_ADDR, observe_write, &o);
     avr_loadcode(a, (uint8_t *)fw, (uint32_t)size, 0);
     for (unsigned step = 0; step < 300 && o.count < EVENTS; ++step) {
