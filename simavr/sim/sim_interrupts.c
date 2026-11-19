@@ -302,6 +302,17 @@ another:
 			table->running[table->running_ptr++] = vector;
 		}
 		avr_clear_interrupt(avr, vector);
+
+		/* EXPERIMENT ONLY -- not an accepted timing fix. The ATmega328P
+		 * must consume four clocks between the interrupt boundary and
+		 * executing its vector. Advance peripherals over that interval,
+		 * without executing a guest opcode. Keep this implementation on
+		 * the disposable IRQ-timing experiment branch.
+		 */
+		if (!strcmp(avr->mmcu, "atmega328p")) {
+			avr->cycle += 4;
+			avr_cycle_timer_process(avr);
+		}
 	}
 }
 
