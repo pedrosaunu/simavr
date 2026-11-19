@@ -30,7 +30,8 @@ int main(int argc,char **argv){
     unsigned injected=0,finished=0;
     for(unsigned step=0;step<500;step++){
         int status=avr_run(avr);
-        if(status!=cpu_Running && status!=cpu_Sleeping) {
+        if(avr->data[0x101]==0x5a){finished=1;break;}
+        if(status!=cpu_Running && status!=cpu_Sleeping && status!=cpu_Done) {
             fprintf(stderr,"MCU stop=%d step=%u pc=0x%x codeend=0x%x r17=%02x r18=%02x r19=%02x\n",status,step,(unsigned)avr->pc,(unsigned)avr->codeend,avr->data[17],avr->data[18],avr->data[19]);
             avr_terminate(avr);return 4;
         }
@@ -45,7 +46,10 @@ int main(int argc,char **argv){
     if(!finished || !injected){fprintf(stderr,"Firmware edge handshake failed\n");
         avr_terminate(avr);return 5;}
     unsigned low=avr->data[17],high=avr->data[18],flags=avr->data[19];
-    int match=(low==0x34 && high==0x12 && (flags&0x20)==0x20);
+    unsigned counter_low=avr->data[20],counter_high=avr->data[21];
+    int match=(counter_low==0x34 && counter_high==0x12 &&
+               low==0x34 && high==0x12 && (flags&0x20)==0x20);
+    printf("ICP1_PRE_EDGE_GUEST_TCNT1L=%02x TCNT1H=%02x\\n",counter_low,counter_high);
     printf("ICP1_GUEST_READBACK ICR1L=%02x ICR1H=%02x TIFR1=%02x expected_16=1234 match=%d\n",
            low,high,flags,match);
     avr_terminate(avr);
