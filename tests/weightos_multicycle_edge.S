@@ -8,5 +8,7 @@
 start:
     ldi r16, 0xa5
     sts 0x003e, r16
+    nop
 loop:
+    nop
     rjmp loop
