@@ -117,6 +117,17 @@ avr_cycle_timer_status(
 avr_cycle_count_t
 avr_cycle_timer_process(
 		struct avr_t * avr);
+
+/* Replay scheduled peripheral events strictly before an instruction's
+ * retirement edge, at their own simulated cycle. Leave same-edge
+ * events pending until the CPU's writeback has become visible.
+ * Returns 0 if a callback requested a hardware reset, in which case
+ * the instruction's pending bus write must be discarded.
+ */
+int
+avr_cycle_timer_process_before(
+        struct avr_t *avr,
+        avr_cycle_count_t retirement_cycle);
 void
 avr_cycle_timer_reset(
 		struct avr_t * avr);
