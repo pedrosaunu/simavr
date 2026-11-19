@@ -22,7 +22,8 @@ static const unsigned expected_saved_pc[EXPECTED_EVENTS] = {
 int main(int argc, char **argv)
 {
     if (argc != 3 || (strcmp(argv[2], "--strict") != 0 &&
-                      strcmp(argv[2], "--expect-known-red") != 0)) {
+                      strcmp(argv[2], "--expect-known-red") != 0 &&
+                      strcmp(argv[2], "--observe") != 0)) {
         fprintf(stderr, "usage: %s timer1_only.bin --strict|--expect-known-red\n", argv[0]);
         return 2;
     }
@@ -76,6 +77,8 @@ int main(int argc, char **argv)
     }
     printf("TIMER1_IRQ_BOUNDARY_SUMMARY events=%u cycle_equal=%u saved_pc_equal=%u\n",
            observed, exact_cycles, exact_pc);
+    if (strcmp(argv[2], "--observe") == 0)
+        return 0; /* Explicitly observational: never a conformance PASS. */
     if (strcmp(argv[2], "--strict") == 0) {
         /* Only strict physical-clock-compatible architectural fidelity is green. */
         return exact_cycles == EXPECTED_EVENTS && exact_pc == EXPECTED_EVENTS ? 0 : 1;
