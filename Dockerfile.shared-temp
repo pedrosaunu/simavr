@@ -22,7 +22,7 @@ RUN set -eux; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/tcnt_probe /tmp/tcnt.bin --strict; \
     echo TIMER1_TCNT_HISTORICAL_PASS
 RUN set -eux; \
-    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e=start \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
       -x assembler-with-cpp tests/weightos_timer1_shared_temp.S -o /tmp/shared.elf; \
     avr-objcopy -O binary -j .text /tmp/shared.elf /tmp/shared.bin; \
     sha256sum /tmp/shared.bin; \
