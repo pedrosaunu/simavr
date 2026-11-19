@@ -59,6 +59,21 @@ llvm-objcopy -O binary -j .text /tmp/tsm.o /tmp/tsm.bin
 Check that the output has **516 bytes** and matches the embedded designated
 byte initializers in the native C test before changing the firmware.
 
+## Second independent regression: resume on release
+
+\`atmega328p_tsm_release.S\` and
+\`test_atmega328p_tsm_release.c\` add a second acceptance condition:
+
+- Both counters remain unchanged while GTCCR holds \`TSM|PSRSYNC\`.
+- When firmware writes zero to GTCCR, they resume counting after 32 NOPs.
+- GTCCR reads back zero after release.
+
+The same official upstream binary failed this second test with both counter
+pairs at \`4->15\` during the hold. This proves that an implementation which
+only freezes the counters but never resumes them will not satisfy the
+regression suite.
+
+
 ## Requirements for the eventual fix
 
 - Shared, free-running synchronous timer clock for Timer0 and Timer1, not
