@@ -194,6 +194,11 @@ typedef void (*avr_run_t)(
  * Main AVR instance. Some of these fields are set by the AVR "Core" definition files
  * the rest is runtime data (as little as possible)
  */
+enum {
+	AVR_CPU_TIMING_IO_WRITEBACK = 1u << 0,
+	AVR_CPU_TIMING_IRQ_ENTRY = 1u << 1,
+};
+
 typedef struct avr_t {
 	const char *	 	mmcu;	// name of the AVR
 	// these are filled by sim_core_declare from constants in /usr/lib/avr/include/avr/io*.h
@@ -232,6 +237,11 @@ typedef struct avr_t {
 	// not only to "cycles that runs" but also "cycles that might have run"
 	// like, sleeping.
 	avr_cycle_count_t	cycle;		// current cycle
+
+	/* Opt-in classic AVR timing features. The default zero value preserves
+	 * existing device behavior until that specific core is validated.
+	 */
+	uint8_t		cpu_timing_features;
 
 	// these next two allow the core to freely run between cycle timers and also allows
 	// for a maximum run cycle limit... run_cycle_count is set during cycle timer processing.
