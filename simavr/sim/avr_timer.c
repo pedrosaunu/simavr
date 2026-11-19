@@ -430,6 +430,17 @@ avr_timer_tcnt_write(
 		avr_timer_cancel_all_cycle_timers(avr, p, 0);
 
 		uint64_t cycles = (tcnt * p->tov_cycles) / p->tov_top;
+		/*
+		 * TCNT writes do not reset the synchronous prescaler. Preserve
+		 * the shared sub-tick phase rather than restarting each timer's
+		 * divider at the write instruction.
+		 */
+		if (p->sync_prescaler && p->cs_div_value > 1 &&
+				!(p->ext_clock_flags & (AVR_TIMER_EXTCLK_FLAG_TN |
+							AVR_TIMER_EXTCLK_FLAG_AS2))) {
+			uint64_t phase = (avr->cycle - p->sync_epoch) % p->cs_div_value;
+			cycles = (uint64_t)tcnt * p->cs_div_value + phase;
+		}
 
 		//	printf("%s-%c %d/%d -- cycles %d/%d\n", __FUNCTION__, p->name, tcnt, p->tov_top, (uint32_t)cycles, (uint32_t)p->tov_cycles);
 
@@ -536,10 +547,20 @@ avr_timer_configure(
 	if (!use_ext_clock || virt_ext_clock) {
 		if (p->tov_cycles > 1) {
 			if (reset) {
-				avr_cycle_timer_register(avr, p->tov_cycles, avr_timer_tov, p);
-				// calling it once, with when == 0 tells it to arm the A/B/C timers if needed
+				/*
+				 * The shared 10-bit synchronous prescaler runs even
+				 * while a timer's clock select is zero. Starting Timer0
+				 * and Timer1 at different moments must not restart the
+				 * divider. Shift the timer's initial overflow base back
+				 * to the preceding shared prescaler edge.
+				 */
+				uint64_t sync_phase = 0;
+				if (p->sync_prescaler && !use_ext_clock && prescaler > 1)
+					sync_phase = (avr->cycle - p->sync_epoch) % prescaler;
+				avr_cycle_timer_register(avr, p->tov_cycles - sync_phase, avr_timer_tov, p);
+				// A zero base marks this as an initial configuration.
 				p->tov_base = 0;
-				avr_timer_tov(avr, avr->cycle, p);
+				avr_timer_tov(avr, avr->cycle - sync_phase, p);
 				p->phase_accumulator = 0.0f;
 			} else {
 				uint64_t orig_tov_base = p->tov_base;
@@ -740,6 +761,26 @@ avr_timer_write(
  * registered once by Timer0; both timers are suspended and released together.
  * This is intentionally separate from Timer2's asynchronous PSRASY input.
  */
+/*
+ * Reset the shared divider while preserving the current TCNT value.
+ * Used for the PSRSYNC strobe outside TSM; the same epoch is applied
+ * to every timer in the synchronous group.
+ */
+static void
+avr_timer_sync_reset(avr_t *avr, avr_timer_t *t)
+{
+	if (t->sync_holding)
+		return;
+	uint16_t counter = _avr_timer_get_current_tcnt(t);
+	t->sync_epoch = avr->cycle;
+	avr_timer_reconfigure(t, 1);
+	if (t->tov_cycles > 1) {
+		if (t->r_tcnth)
+			avr->data[t->r_tcnth] = counter >> 8;
+		avr_timer_tcnt_write(avr, t->r_tcnt, counter & 0xff, t);
+	}
+}
+
 static void
 avr_timer_sync_hold(avr_t *avr, avr_timer_t *t, int hold)
 {
@@ -788,6 +829,8 @@ avr_timer_gtccr_write(avr_t *avr, avr_io_addr_t addr, uint8_t value, void *param
 			avr_timer_sync_hold(avr, t, 1);
 		} else if (was_held) {
 			avr_timer_sync_hold(avr, t, 0);
+		} else if (value & 0x01) {
+			avr_timer_sync_reset(avr, t);
 		}
 	}
 }
