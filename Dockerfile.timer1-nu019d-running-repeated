@@ -1,0 +1,38 @@
+# Independent AVR real guest, live Timer1 and PB0 rising-edge waveform.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+ gcc g++ make libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr \
+ python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eu; \
+ make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+ tests/weightos_timer1_nu019d_running_repeated_probe.c \
+ -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/nu019d_probe; \
+ : > /tmp/nu019d.raw; \
+ for pad in 0 2 4; do \
+  avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+    -DNU019D_PAD=$pad -x assembler-with-cpp \
+    tests/weightos_timer1_nu019d_running_repeated.S -o /tmp/nu019d.elf; \
+  avr-objcopy -O binary -j .text /tmp/nu019d.elf /tmp/nu019d.bin; \
+  sha="$(sha256sum /tmp/nu019d.bin | cut -d' ' -f1)"; \
+  for mode in 0 1 2 3 4 5; do \
+   name="$(printf '%s\n' none single split overlap late stress | sed -n "$((mode+1))p")"; \
+   printf 'NU019D_CASE_BEGIN mode=%s pad=%s sha256=%s\n' "$name" "$pad" "$sha" >> /tmp/nu019d.raw; \
+   printf 'NU019D_WORDS %s\n' "$(od -An -tu2 -v /tmp/nu019d.bin | xargs)" >> /tmp/nu019d.raw; \
+   LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+    /tmp/nu019d_probe /tmp/nu019d.bin "$mode" "$pad" >> /tmp/nu019d.raw 2>&1; \
+   echo NU019D_CASE_END >> /tmp/nu019d.raw; \
+  done; \
+ done; \
+ if python3 tests/weightos_timer1_nu019d_running_repeated_audit.py /tmp/nu019d.raw > /tmp/nu019d-results.jsonl; then \
+   cat /tmp/nu019d-results.jsonl; \
+ else \
+   echo NU019D_INDEPENDENT_REFERENCE_RED; \
+   tail -n 70 /tmp/nu019d.raw; \
+   exit 1; \
+ fi; \
+ echo NU019D_18_GUEST_PROGRAMS_INDEPENDENT_COMPLETE
+CMD ["/bin/sh","-c","exit 0"]
