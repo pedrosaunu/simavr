@@ -20,18 +20,18 @@ start:
     rjmp ovf_isr
 .org 0x60
 init:
-    ldi r16,0xff
+    ldi r16,0x00
     sts 0x89,r16           /* OCR1AH high-byte TEMP */
-    ldi r16,0xfd
-    sts 0x88,r16           /* OCR1AL commits 0xfffd */
-    ldi r16,0xff
+    ldi r16,0x04
+    sts 0x88,r16           /* OCR1AL commits 0x0004 */
+    ldi r16,0x00
     sts 0x8b,r16           /* OCR1BH high-byte TEMP */
-    ldi r16,0xff
-    sts 0x8a,r16           /* OCR1BL commits 0xffff */
-    ldi r16,0xff
+    ldi r16,0x07
+    sts 0x8a,r16           /* OCR1BL commits 0x0007 */
+    ldi r16,0x00
     sts 0x85,r16           /* TCNT1H high-byte TEMP */
-    ldi r16,0xf8
-    sts 0x84,r16           /* TCNT1L commits 0xfff8 */
+    ldi r16,0x00
+    sts 0x84,r16           /* TCNT1L commits 0x0000 */
     ldi r16,IRQ_MASK
     sts 0x6f,r16           /* TIMSK1 mask */
     ldi r16,1
@@ -55,8 +55,8 @@ ovf_isr:
     inc r23
     reti
 reload_timer:
-    ldi r16,0xff
+    ldi r16,0x00
     sts 0x85,r16
-    ldi r16,0xf8
+    ldi r16,0x00
     sts 0x84,r16
     ret
