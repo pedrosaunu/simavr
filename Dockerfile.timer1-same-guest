@@ -1,0 +1,26 @@
+# Same guest AVR binary from reset; diagnostic, fail-closed for
+# whether one Timer1 overflow ISR and RETI are actually observed.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+ ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev \
+ gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+ make -C simavr RELEASE=1 all; \
+ avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+    -x assembler-with-cpp tests/weightos_timer1_same_guest_irq.S \
+    -o /tmp/t1-same-guest.elf; \
+ avr-objcopy -O binary -j .text /tmp/t1-same-guest.elf /tmp/t1-same-guest.bin; \
+ sha256sum /tmp/t1-same-guest.bin; \
+ echo SAME_GUEST_BINARY_WORDS_BEGIN; \
+ od -An -tu2 -v /tmp/t1-same-guest.bin | xargs; \
+ echo SAME_GUEST_BINARY_WORDS_END; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+   tests/weightos_timer1_same_guest_probe.c \
+   -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+   -o /tmp/t1-same-guest-probe; \
+ LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+   /tmp/t1-same-guest-probe /tmp/t1-same-guest.bin
+CMD ["/bin/sh","-c","exit 0"]
