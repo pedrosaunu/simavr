@@ -77,7 +77,19 @@ if current is not None:raise ValueError("unterminated case")
 if len(cases)!=18 or {(x["mode"],x["pad"]) for x in cases}!={(m,p) for m in names for p in (0,2,4)}:
  raise ValueError("missing or duplicated 18 guest programs")
 for c in cases:
- print("NU019D_CASE_RESULT "+json.dumps(c,sort_keys=True,separators=(",",":")))
+ # Railway log records may truncate long lines. Keep every individual
+ # evidence record below 900 bytes and reject incomplete chunk sets
+ # during WeightOS import. The guest trace is never downsampled.
+ meta={k:v for k,v in c.items() if k not in ("guest","words")}
+ print("NU019D_CASE_META "+json.dumps(meta,sort_keys=True,separators=(",",":")))
+ for i in range(0,len(c["words"]),32):
+  part={"mode":c["mode"],"pad":c["pad"],"part":i//32,"words":c["words"][i:i+32]}
+  print("NU019D_CASE_WORDS "+json.dumps(part,sort_keys=True,separators=(",",":")))
+ for i in range(0,len(c["guest"]),3):
+  part={"mode":c["mode"],"pad":c["pad"],"part":i//3,"guest":c["guest"][i:i+3]}
+  encoded=json.dumps(part,sort_keys=True,separators=(",",":"))
+  if len(encoded)>950:raise ValueError("guest log chunk exceeds safe Railway length")
+  print("NU019D_CASE_TRACE "+encoded)
 total=sum(c["guest_boundaries"] for c in cases)
 summary={"schema":"weightos.nu019d.running-repeated-icp1-reference/v1",
  "status":"INDEPENDENT_MODIFIED_SIMAVR_GUEST_SOFTWARE_REFERENCE_ONLY",
