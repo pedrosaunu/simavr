@@ -298,10 +298,6 @@ avr_timer_irq_ext_clock(
 			}
 		}
 
-        if (p->overflow.raised.reg == 0x36)
-            fprintf(stderr, "NU019T_REF_EVENT source=TOV1 callback_when=%llu cpu_cycle=%llu flag_before=%02x\n",
-                    (unsigned long long)avr->cycle, (unsigned long long)avr->cycle,
-                    (unsigned)avr->data[0x36]);
 		avr_raise_interrupt(avr, &p->overflow);
 	}
 
@@ -355,8 +351,15 @@ avr_timer_tov(
 		}
 	}
 
-	if (!start)
+	if (!start) {
+        /* The internal-clock overflow callback is here, NOT in the
+         * external-clock overflow dispatcher. Observation only. */
+        if (p->overflow.raised.reg == 0x36)
+            fprintf(stderr, "NU019T_REF_EVENT source=TOV1 callback_when=%llu cpu_cycle=%llu flag_before=%02x\n",
+                    (unsigned long long)when, (unsigned long long)avr->cycle,
+                    (unsigned)avr->data[0x36]);
 		avr_raise_interrupt(avr, &p->overflow);
+    }
 	p->tov_base = when;
 
 	static const avr_cycle_timer_t dispatch[AVR_TIMER_COMP_COUNT] =
