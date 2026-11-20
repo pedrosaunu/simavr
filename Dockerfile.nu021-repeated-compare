@@ -1,0 +1,30 @@
+# NU-021: three real AVR binaries, independent guest-generated IRQs.
+# A FAILED reference must remain failed; no forced SUCCESS/grep substitution.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates make gcc g++ libc6-dev pkg-config libelf-dev \
+  gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+  make -C simavr RELEASE=1 all; \
+  cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+    tests/weightos_nu021_repeated_compare_probe.c \
+    -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+    -o /tmp/nu021_probe; \
+  for mask in 2 4 6; do \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -DIRQ_MASK=$mask -x assembler-with-cpp \
+      tests/weightos_nu021_repeated_compare.S \
+      -o /tmp/nu021-$mask.elf; \
+    avr-objcopy -O binary -j .text /tmp/nu021-$mask.elf /tmp/nu021-$mask.bin; \
+    sha256sum /tmp/nu021-$mask.bin; \
+    echo NU021_BINARY_WORDS_BEGIN_mask_$mask; \
+    od -An -tu2 -v /tmp/nu021-$mask.bin | xargs; \
+    echo NU021_BINARY_WORDS_END_mask_$mask; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+      /tmp/nu021_probe /tmp/nu021-$mask.bin $mask; \
+  done; \
+  echo NU021_GUEST_ALL_MASKS_STRICT_PASS
+CMD ["/bin/sh","-c","exit 0"]
