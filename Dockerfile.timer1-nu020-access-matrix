@@ -1,0 +1,31 @@
+# NU-020 independent software-reference WGM0 W1C access matrix.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+ ca-certificates make gcc g++ libc6-dev pkg-config libelf-dev \
+ gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+ make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+   tests/weightos_timer1_nu020_access_probe.c \
+   -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+   -o /tmp/nu020_access_probe; \
+ for running in 0 1; do \
+  for style in 0 1 2 3 4 5 6; do \
+   avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -DCLEAR_STYLE=$style -DRUNNING_TIMER=$running \
+      -x assembler-with-cpp tests/weightos_timer1_nu020_access.S \
+      -o /tmp/nu020-$running-$style.elf; \
+   avr-objcopy -O binary -j .text /tmp/nu020-$running-$style.elf /tmp/nu020-$running-$style.bin; \
+   echo NU020_BINARY_BEGIN; \
+   sha256sum /tmp/nu020-$running-$style.bin; \
+   od -An -tu2 -v /tmp/nu020-$running-$style.bin | xargs; \
+   echo NU020_BINARY_END; \
+   LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+    /tmp/nu020_access_probe /tmp/nu020-$running-$style.bin $style $running; \
+  done; \
+ done; \
+ echo NU020_INDEPENDENT_14_GUEST_MATRIX_COMPLETE
+CMD ["/bin/sh","-c","exit 0"]
