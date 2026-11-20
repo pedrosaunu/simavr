@@ -60,8 +60,18 @@ for r in rows:
  if r["summary"]["steps"]!=len(r["guest"]):
   raise ValueError("guest step count inconsistent")
  if r["delay"]>=0:
-  if r["events"][0]["capture"]!=0x1234 or r["summary"]["r21"]!=0x34 or r["summary"]["r22"]!=0x12:
-   raise ValueError("wrong captured input-register readback")
+  if r["events"][0]["capture"]!=0x1234:
+   raise ValueError("capture engine read wrong TCNT1 for "+str((r["nops"],r["delay"])))
+  # An edge occurring AFTER the guest's LDS ICR1L may correctly leave
+  # r21=0; an edge between its two 16-bit reads may expose mixed
+  # readback. Do not demand a retroactive guest read after an event.
+  if r["summary"]["r21"] not in (0,0x34) or r["summary"]["r22"] not in (0,0x12):
+   raise ValueError("unexpected guest readback for "+str((r["nops"],r["delay"])))
+  # If the event was visible by the W1C instruction, both ICR reads
+  # necessarily occur later and must see the full captured value.
+  if r["events"][0]["cycle"] <= r["writes"][-1]["cycle"] and (
+       r["summary"]["r21"],r["summary"]["r22"])!=(0x34,0x12):
+   raise ValueError("early event failed complete guest capture readback")
  else:
   if r["summary"]["r21"] or r["summary"]["r22"] or r["summary"]["r23"]&0x20:
    raise ValueError("control unexpectedly captured")
