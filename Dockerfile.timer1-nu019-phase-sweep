@@ -1,0 +1,36 @@
+# NU-019: independently compiled guest compare-vs-clear timing sweep.
+# DO NOT use this software event-ordering as silicon equivalence.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    make gcc g++ libc6-dev pkg-config libelf-dev \
+    gcc-avr binutils-avr avr-libc python3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eu; \
+    make -C simavr RELEASE=1 all; \
+    cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+      tests/weightos_timer1_nu019_same_cycle_probe.c \
+      -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+      -o /tmp/nu019_probe; \
+    : > /tmp/nu019.raw; \
+    for ocr in 0 1 2 3 4 5 6 7 8; do \
+       for nops in 0 1 2 3 4 5 6 7 8; do \
+          avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+            -DNU019_OCR_A=$ocr -DNU019_NOP_COUNT=$nops \
+            -x assembler-with-cpp tests/weightos_timer1_nu019_same_cycle.S \
+            -o /tmp/nu019.elf; \
+          avr-objcopy -O binary -j .text /tmp/nu019.elf /tmp/nu019.bin; \
+          sha="$(sha256sum /tmp/nu019.bin | cut -d' ' -f1)"; \
+          printf 'NU019_CASE_BEGIN ocr=%s nops=%s sha256=%s\n' "$ocr" "$nops" "$sha" >> /tmp/nu019.raw; \
+          LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+           /tmp/nu019_probe /tmp/nu019.bin "$ocr" "$nops" >> /tmp/nu019.raw 2>&1; \
+          echo NU019_CASE_END >> /tmp/nu019.raw; \
+       done; \
+    done; \
+    python3 tests/weightos_timer1_nu019_sweep_audit.py /tmp/nu019.raw \
+     > /tmp/nu019-results.jsonl; \
+    cat /tmp/nu019-results.jsonl; \
+    echo NU019_SIMAVR_81_GUEST_SWEEP_COMPLETE
+CMD ["/bin/sh", "-c", "exit 0"]
