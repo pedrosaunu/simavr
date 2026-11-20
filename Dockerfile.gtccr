@@ -10,7 +10,7 @@ COPY . .
 RUN set -eux; \
   make -C simavr RELEASE=1 all; \
   for n in 3 11; do \
-    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e=start -DNOP_COUNT=$n \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -DNOP_COUNT=$n \
       -x assembler-with-cpp tests/weightos_gtccr_hold_release.S \
       -o /tmp/gtccr-$n.elf; \
     avr-objcopy -O binary -j .text /tmp/gtccr-$n.elf /tmp/gtccr-$n.bin; \
