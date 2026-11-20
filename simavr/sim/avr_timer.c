@@ -412,6 +412,28 @@ _avr_timer_get_current_tcnt(
 	return 0;
 }
 
+/* ATmega328P datasheet §§15.3/15.6: reading ICR1L or TCNT1L
+ * snapshots high into the single timer TEMP; ICR1H/TCNT1H subsequently
+ * reads TEMP even if a new input capture updates the underlying ICR1.
+ * This is a bounded read-side correction to the experimental reference,
+ * not a chip-wide TEMP read/write conformance declaration. */
+static uint8_t
+avr_timer_icr_low_read(struct avr_t *avr, avr_io_addr_t addr, void *param)
+{
+    avr_timer_t *p = (avr_timer_t *)param;
+    if (p->r_icrh)
+        p->read_temp_high = avr->data[p->r_icrh];
+    return avr_core_watch_read(avr, addr);
+}
+
+static uint8_t
+avr_timer_shared_temp_high_read(struct avr_t *avr, avr_io_addr_t addr, void *param)
+{
+    avr_timer_t *p = (avr_timer_t *)param;
+    (void)avr_core_watch_read(avr, addr);
+    return p->read_temp_high;
+}
+
 static uint8_t
 avr_timer_tcnt_read(
 		struct avr_t * avr,
@@ -426,8 +448,10 @@ avr_timer_tcnt_read(
 			? _timer_get_tcnt(p) : _avr_timer_get_current_tcnt(p);
 
 	avr->data[p->r_tcnt] = tcnt;
-	if (p->r_tcnth)
+	if (p->r_tcnth) {
 		avr->data[p->r_tcnth] = tcnt >> 8;
+        p->read_temp_high = (uint8_t)(tcnt >> 8);
+    }
 
 	return avr_core_watch_read(avr, addr);
 }
@@ -1075,6 +1099,7 @@ avr_timer_reset(
 {
 	avr_timer_t * p = (avr_timer_t *)port;
 	avr_timer_cancel_all_cycle_timers(p->io.avr, p, 0);
+    p->read_temp_high = 0;
 
 	// check to see if the comparators have a pin output. If they do,
 	// (try) to get the ioport corresponding IRQ and connect them
@@ -1201,6 +1226,12 @@ avr_timer_init(
 	}
 	avr_register_io_write(avr, p->r_tcnt, avr_timer_tcnt_write, p);
 	avr_register_io_read(avr, p->r_tcnt, avr_timer_tcnt_read, p);
+    if (p->r_tcnth)
+        avr_register_io_read(avr,p->r_tcnth,avr_timer_shared_temp_high_read,p);
+    if (p->r_icr && p->r_icrh) {
+        avr_register_io_read(avr,p->r_icr,avr_timer_icr_low_read,p);
+        avr_register_io_read(avr,p->r_icrh,avr_timer_shared_temp_high_read,p);
+    }
 
 	if (p->as2.reg) {
 		p->ext_clock_flags = AVR_TIMER_EXTCLK_FLAG_VIRT;

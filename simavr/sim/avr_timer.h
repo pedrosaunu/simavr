@@ -177,6 +177,12 @@ typedef struct avr_timer_t {
 
 	avr_io_addr_t	r_tcnt, r_icr;
 	avr_io_addr_t	r_tcnth, r_icrh;
+    /* Shared Timer1 16-bit READ-side high-byte TEMP.
+     * ICRnL/TCNTnL latch the high byte; subsequent high-byte reads
+     * must return this snapshot, not live 16-bit register memory.
+     * This experimental fork does not claim full read/write TEMP coverage.
+     */
+    uint8_t         read_temp_high;
 
 	avr_regbit_t	wgm[4];
 	avr_timer_wgm_t	wgm_op[16];
