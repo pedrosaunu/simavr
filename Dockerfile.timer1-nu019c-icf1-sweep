@@ -1,0 +1,44 @@
+# NU-019C: independent AVR PINB0 edge input-capture/W1C, 31 programs.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+ make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr binutils-avr avr-libc \
+ python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eu; \
+ make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+ tests/weightos_timer1_nu019c_icf1_probe.c \
+ -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/nu019c_probe; \
+ : >/tmp/nu019c.raw; \
+ for nops in 0 1 2 3 4 5; do \
+  avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+    -DNU019C_NOPS=$nops -x assembler-with-cpp \
+    tests/weightos_timer1_nu019c_icf1.S -o /tmp/nu019c.elf; \
+  avr-objcopy -O binary -j .text /tmp/nu019c.elf /tmp/nu019c.bin; \
+  sha="$(sha256sum /tmp/nu019c.bin | cut -d' ' -f1)"; \
+  for delay in 0 1 2 3 4; do \
+   printf 'NU019C_CASE_BEGIN nops=%s delay=%s sha256=%s\n' "$nops" "$delay" "$sha" >> /tmp/nu019c.raw; \
+   printf 'NU019C_WORDS %s\n' "$(od -An -tu2 -v /tmp/nu019c.bin | xargs)" >> /tmp/nu019c.raw; \
+   LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+    /tmp/nu019c_probe /tmp/nu019c.bin "$nops" "$delay" >> /tmp/nu019c.raw 2>&1; \
+   echo NU019C_CASE_END >> /tmp/nu019c.raw; \
+  done; \
+  if test "$nops" = 2; then \
+   printf 'NU019C_CASE_BEGIN nops=2 delay=-1 sha256=%s\n' "$sha" >> /tmp/nu019c.raw; \
+   printf 'NU019C_WORDS %s\n' "$(od -An -tu2 -v /tmp/nu019c.bin | xargs)" >> /tmp/nu019c.raw; \
+   LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+    /tmp/nu019c_probe /tmp/nu019c.bin 2 -1 >> /tmp/nu019c.raw 2>&1; \
+   echo NU019C_CASE_END >> /tmp/nu019c.raw; \
+  fi; \
+ done; \
+ if python3 tests/weightos_timer1_nu019c_sweep_audit.py /tmp/nu019c.raw >/tmp/nu019c-results.jsonl; then \
+   cat /tmp/nu019c-results.jsonl; \
+ else \
+   echo NU019C_INDEPENDENT_SWEEP_RED; \
+   tail -n 95 /tmp/nu019c.raw; \
+   exit 1; \
+ fi; \
+ echo NU019C_31_GUEST_PIN_EDGE_SWEEP_COMPLETE
+CMD ["/bin/sh","-c","exit 0"]
