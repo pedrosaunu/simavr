@@ -24,6 +24,8 @@ for line in open(sys.argv[1],encoding="utf-8"):
   if current["summary"]["ready"]!=1 or current["summary"]["done"]!=1:
    raise ValueError("guest did not reach completion marker")
   if current["summary"]["tccr1b"]!=0x41:raise ValueError("timer was not running")
+  if current["summary"]["tifr1"] & 0x06:
+   raise ValueError("unrelated compare pending flags contaminate isolated ICP1 reference")
   if len(current["events"])!=expected_edges[current["mode"]]:
    raise ValueError("unexpected external ICP1 callback count: "+repr((current["mode"],current["pad"],current["events"])))
   if len(current["pin"])!=current["summary"]["transitions"]:
@@ -82,6 +84,8 @@ for c in cases:
  # during WeightOS import. The guest trace is never downsampled.
  meta={k:v for k,v in c.items() if k not in ("guest","words")}
  print("NU019D_CASE_META "+json.dumps(meta,sort_keys=True,separators=(",",":")))
+ if c["pad"]==0:
+  print("NU019D_SELECTED_CASE "+json.dumps(c,sort_keys=True,separators=(",",":")))
  for i in range(0,len(c["words"]),32):
   part={"mode":c["mode"],"pad":c["pad"],"part":i//32,"words":c["words"][i:i+32]}
   print("NU019D_CASE_WORDS "+json.dumps(part,sort_keys=True,separators=(",",":")))
