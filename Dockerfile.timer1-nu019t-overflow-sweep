@@ -1,0 +1,33 @@
+# NU-019T: 81 real AVR WGM0 near-overflow experiments, reference only.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+ gcc g++ make libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr \
+ python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eu; \
+ make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+ tests/weightos_timer1_nu019t_overflow_probe.c \
+ -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/nu019t_probe; \
+ : > /tmp/nu019t-all.raw; \
+ for low in 247 248 249 250 251 252 253 254 255; do \
+  for nops in 0 1 2 3 4 5 6 7 8; do \
+   avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -DNU019T_START_LOW=$low -DNU019T_NOP_COUNT=$nops \
+      -x assembler-with-cpp tests/weightos_timer1_nu019t_overflow.S \
+      -o /tmp/nu019t.elf; \
+   avr-objcopy -O binary -j .text /tmp/nu019t.elf /tmp/nu019t.bin; \
+   sha="$(sha256sum /tmp/nu019t.bin | cut -d' ' -f1)"; \
+   printf 'NU019T_CASE_BEGIN low=%s nops=%s sha256=%s\n' "$low" "$nops" "$sha" >> /tmp/nu019t-all.raw; \
+   LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+     /tmp/nu019t_probe /tmp/nu019t.bin "$low" "$nops" \
+     >> /tmp/nu019t-all.raw 2>&1; \
+   echo NU019T_CASE_END >> /tmp/nu019t-all.raw; \
+  done; \
+ done; \
+ python3 tests/weightos_timer1_nu019t_sweep_audit.py /tmp/nu019t-all.raw > /tmp/nu019t-sweep.jsonl; \
+ cat /tmp/nu019t-sweep.jsonl; \
+ echo NU019T_81_GUEST_TOV1_SWEEP_COMPLETE
+CMD ["/bin/sh","-c","exit 0"]

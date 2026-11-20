@@ -297,6 +297,11 @@ avr_timer_irq_ext_clock(
 				avr_timer_comp_on_tov(p, 0, compi);
 			}
 		}
+
+        if (p->overflow.raised.reg == 0x36)
+            fprintf(stderr, "NU019T_REF_EVENT source=TOV1 callback_when=%llu cpu_cycle=%llu flag_before=%02x\n",
+                    (unsigned long long)when, (unsigned long long)avr->cycle,
+                    (unsigned)avr->data[0x36]);
 		avr_raise_interrupt(avr, &p->overflow);
 	}
 
