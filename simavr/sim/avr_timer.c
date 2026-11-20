@@ -84,6 +84,14 @@ avr_timer_comp(
 	uint32_t flags = 0;
 
 	if (raise_interrupt) {
+        /* NU-019 observation only; no state mutation. Use recorded
+         * scheduled callback cycle and the timer host clock separately.
+         * Never interpret this software ordering as silicon evidence. */
+        if (p->comp[comp].interrupt.raised.reg == 0x36 &&
+                comp == AVR_TIMER_COMPA)
+            fprintf(stderr, "NU019_REF_EVENT source=OCF1A callback_when=%llu cpu_cycle=%llu flag_before=%02x\n",
+                    (unsigned long long)when, (unsigned long long)avr->cycle,
+                    (unsigned)avr->data[0x36]);
 	   avr_raise_interrupt(avr, &p->comp[comp].interrupt);
 	}
 
@@ -917,6 +925,11 @@ avr_timer_write_pending(
 	avr_timer_t * p = (avr_timer_t *)param;
 
 	// All bits in this register are assumed to be write-1-to-clear.
+    if (addr == 0x36 && v) {
+        fprintf(stderr, "NU019_REF_WRITE source=TIFR1 cpu_cycle=%llu data=%02x flag_before=%02x\n",
+                (unsigned long long)avr->cycle, (unsigned)v,
+                (unsigned)avr->data[0x36]);
+    }
 
 	if (addr == p->overflow.raised.reg &&
 	    avr_regbit_from_value(avr, p->overflow.raised, v)) {
