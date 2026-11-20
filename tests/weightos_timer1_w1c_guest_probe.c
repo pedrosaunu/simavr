@@ -11,7 +11,7 @@
 int main(int argc,char**argv){
  if(argc!=3)return 2;
  unsigned style=(unsigned)strtoul(argv[2],NULL,0);
- if(style>1)return 2;
+ if(style>2)return 2;
  uint8_t image[32768]={0};
  FILE*f=fopen(argv[1],"rb");if(!f)return 2;
  size_t n=fread(image,1,sizeof(image),f);fclose(f);
@@ -35,9 +35,12 @@ int main(int argc,char**argv){
         (unsigned)a->data[22],(unsigned)a->data[23],
         (unsigned)a->data[0x36],(unsigned)a->data[0x81],now);
     if(pc==(style==0?0x32:0x31)){
-        matched=(a->data[20]==6 && a->data[22]==a->data[21]
-                 && a->data[23]==0 && seen_stop &&
-                 (style!=0 || a->data[21]==4));
+        const unsigned after=(unsigned)a->data[21];
+        const unsigned final=(unsigned)a->data[23];
+        matched=(a->data[20]==6 && a->data[22]==after && seen_stop &&
+                 ((style==0 && after==4 && final==0) ||
+                  (style==1 && after==0 && final==0) ||
+                  (style==2 && after==2 && final==2)));
         break;
     }
  }

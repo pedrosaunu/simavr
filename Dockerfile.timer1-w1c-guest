@@ -13,7 +13,7 @@ RUN set -eux; \
     tests/weightos_timer1_w1c_guest_probe.c \
     -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
     -o /tmp/timer1_w1c_guest_probe; \
- for style in 0 1; do \
+ for style in 0 1 2; do \
     avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
       -DCLEAR_STYLE=$style -x assembler-with-cpp \
       tests/weightos_timer1_w1c_guest.S \
@@ -26,5 +26,5 @@ RUN set -eux; \
     LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
       /tmp/timer1_w1c_guest_probe /tmp/t1-w1c-$style.bin $style; \
  done; \
- echo TIMER1_W1C_TWO_GUEST_FIRMWARES_STRICT_PASS
+ echo TIMER1_W1C_THREE_GUEST_FIRMWARES_INCLUDING_CBI_STRICT_PASS
 CMD ["/bin/sh","-c","exit 0"]

@@ -24,6 +24,8 @@ init:
  out 0x16,r17       /* W1C OCF1A only */
 #elif CLEAR_STYLE==1
  sbi 0x16,1         /* read-modify-write W1C interaction */
+#elif CLEAR_STYLE==2
+ cbi 0x16,1         /* clear bit in RMW value; other pending W1C flags clear */
 #else
 #error Unsupported_CLEAR_STYLE
 #endif
