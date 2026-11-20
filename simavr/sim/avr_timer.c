@@ -92,6 +92,11 @@ avr_timer_comp(
             fprintf(stderr, "NU019_REF_EVENT source=OCF1A callback_when=%llu cpu_cycle=%llu flag_before=%02x\n",
                     (unsigned long long)when, (unsigned long long)avr->cycle,
                     (unsigned)avr->data[0x36]);
+        if (p->comp[comp].interrupt.raised.reg == 0x36 &&
+                comp == AVR_TIMER_COMPB)
+            fprintf(stderr, "NU019B_REF_EVENT source=OCF1B callback_when=%llu cpu_cycle=%llu flag_before=%02x\n",
+                    (unsigned long long)when, (unsigned long long)avr->cycle,
+                    (unsigned)avr->data[0x36]);
 	   avr_raise_interrupt(avr, &p->comp[comp].interrupt);
 	}
 
