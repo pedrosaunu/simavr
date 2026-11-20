@@ -27,11 +27,12 @@ int main(int argc,char **argv){
   unsigned ctrl=(unsigned)avr->data[0x81];
   printf("NU020_BOUNDARY style=%u running=%u step=%u pc=%04x cycles=%llu "
    "r19=%02x r20=%02x r21=%02x r22=%02x r23=%02x "
-   "tifr1=%02x tccr1b=%02x tcnt1=%04x\n",
+   "r24=%02x r25=%02x tifr1=%02x tccr1b=%02x tcnt1=%04x\n",
    style,running,step,pc,(unsigned long long)avr->cycle,
    (unsigned)avr->data[19],(unsigned)avr->data[20],
    (unsigned)avr->data[21],(unsigned)avr->data[22],
-   (unsigned)avr->data[23],flag,ctrl,count);
+   (unsigned)avr->data[23],(unsigned)avr->data[24],
+   (unsigned)avr->data[25],flag,ctrl,count);
   observed++;
   if(avr->data[19]==0x5a){
    done=1;
@@ -45,11 +46,13 @@ int main(int argc,char **argv){
   }
  }
  printf("NU020_SUMMARY style=%u running=%u steps=%u done=%u "
-  "r20=%02x r21=%02x r22=%02x r23=%02x tifr1=%02x "
-  "tccr1b=%02x pass=%u\n",
+  "r20=%02x r21=%02x r22=%02x r23=%02x r24=%02x r25=%02x "
+  "tifr1=%02x tccr1b=%02x guest_counter=%04x pass=%u\n",
   style,running,observed,done,
   (unsigned)avr->data[20],(unsigned)avr->data[21],
   (unsigned)avr->data[22],(unsigned)avr->data[23],
-  (unsigned)avr->data[0x36],(unsigned)avr->data[0x81],matched);
+  (unsigned)avr->data[24],(unsigned)avr->data[25],
+  (unsigned)avr->data[0x36],(unsigned)avr->data[0x81],
+  (unsigned)avr->data[24]|((unsigned)avr->data[25]<<8),matched);
  avr_terminate(avr);return matched?0:5;
 }

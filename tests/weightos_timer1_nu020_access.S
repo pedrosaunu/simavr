@@ -60,6 +60,8 @@ init:
  ldi r17,0x04
  out 0x16,r17
  in r23,0x16
+ lds r24,0x0084       /* guest TCNT1L read triggers timer hardware register */
+ lds r25,0x0085       /* guest TCNT1H read sees TEMP high latch */
  ldi r19,0x5a
 loop:
  nop
