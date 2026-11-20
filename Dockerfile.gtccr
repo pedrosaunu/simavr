@@ -1,0 +1,26 @@
+# Bounded standalone guest-visible TSM/PSRSYNC dual-timer reference probe.
+# Separate from the v1.34 WeightOS neural verifier and physical silicon.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates make gcc g++ libc6-dev pkg-config libelf-dev \
+  gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+  make -C simavr RELEASE=1 all; \
+  for n in 3 11; do \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e=start -DNOP_COUNT=$n \
+      -x assembler-with-cpp tests/weightos_gtccr_hold_release.S \
+      -o /tmp/gtccr-$n.elf; \
+    avr-objcopy -O binary -j .text /tmp/gtccr-$n.elf /tmp/gtccr-$n.bin; \
+    sha256sum /tmp/gtccr-$n.bin; \
+  done; \
+  cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+    tests/weightos_gtccr_hold_release_probe.c \
+    -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+    -o /tmp/gtccr_probe; \
+  LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+    /tmp/gtccr_probe /tmp/gtccr-3.bin /tmp/gtccr-11.bin --strict; \
+  echo GTCCR_TSM_PSR_SYNC_EXTERNAL_STRICT_PASS
+CMD ["/bin/sh","-c","exit 0"]
