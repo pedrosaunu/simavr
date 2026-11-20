@@ -28,11 +28,11 @@ init:
 #error Unsupported_CLEAR_STYLE
 #endif
  in r21,0x16        /* after first clear */
+ ldi r17,0
+ out 0x16,r17       /* zero write must preserve remaining flags */
+ in r22,0x16
  ldi r17,0x04
  out 0x16,r17       /* clear OCF1B via literal mask */
- in r22,0x16
- ldi r17,0
- out 0x16,r17       /* zero write must preserve */
  in r23,0x16
 loop:
  nop
