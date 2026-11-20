@@ -23,7 +23,7 @@ static int run(const char *path, unsigned mask) {
 
     unsigned sp_initial = a->data[0x5d] + 256U * a->data[0x5e];
     unsigned seen_a = 0, seen_b = 0, seen_overflow = 0;
-    unsigned last_a = 0, last_b = 0, count_reti = 0, last_pc = 0xffff;
+    unsigned count_reti = 0, last_pc = 0xffff, last_sp = sp_initial;
     unsigned complete = 0, steps = 0;
     for (unsigned i = 0; i < MAX_STEPS; ++i) {
         int rc = avr_run(a);
@@ -34,16 +34,14 @@ static int run(const char *path, unsigned mask) {
         }
         unsigned pc = (unsigned)a->pc / 2U;
         unsigned sp = a->data[0x5d] + 256U * a->data[0x5e];
-        unsigned saved = (sp_initial < sizeof(a->data) && sp_initial > 0)
+        unsigned saved = (sp_initial < 0x900 && sp_initial >= 0x100)
             ? (unsigned)a->data[sp_initial] + 256U * a->data[sp_initial-1]
             : 0;
         if (pc == 0x16 && last_pc != 0x16) ++seen_a;
         if (pc == 0x18 && last_pc != 0x18) ++seen_b;
         if (pc == 0x1a && last_pc != 0x1a) ++seen_overflow;
-        if (a->data[21] > last_a && sp == sp_initial) ++count_reti;
-        if (a->data[22] > last_b && sp == sp_initial) ++count_reti;
-        last_a = a->data[21];
-        last_b = a->data[22];
+        if (last_sp < sp_initial && sp == sp_initial) ++count_reti;
+        last_sp = sp;
         steps = i + 1;
         printf("NU021_GUEST_TRACE mask=%02x step=%u pc_word=%04x "
                "cycle=%llu r21=%02x r22=%02x r23=%02x "
