@@ -1,0 +1,30 @@
+# True guest CPU WGM0 Timer1 flag W1C: literal OUT vs read-modify-write SBI.
+# The simulator host never writes TIFR1 and never injects interrupts.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+ ca-certificates make gcc g++ libc6-dev pkg-config libelf-dev \
+ gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+ make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+    tests/weightos_timer1_w1c_guest_probe.c \
+    -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+    -o /tmp/timer1_w1c_guest_probe; \
+ for style in 0 1; do \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -DCLEAR_STYLE=$style -x assembler-with-cpp \
+      tests/weightos_timer1_w1c_guest.S \
+      -o /tmp/t1-w1c-$style.elf; \
+    avr-objcopy -O binary -j .text /tmp/t1-w1c-$style.elf /tmp/t1-w1c-$style.bin; \
+    sha256sum /tmp/t1-w1c-$style.bin; \
+    echo W1C_BINARY_WORDS_BEGIN_style_$style; \
+    od -An -tu2 -v /tmp/t1-w1c-$style.bin | xargs; \
+    echo W1C_BINARY_WORDS_END_style_$style; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+      /tmp/timer1_w1c_guest_probe /tmp/t1-w1c-$style.bin $style; \
+ done; \
+ echo TIMER1_W1C_TWO_GUEST_FIRMWARES_STRICT_PASS
+CMD ["/bin/sh","-c","exit 0"]
