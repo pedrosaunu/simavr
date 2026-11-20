@@ -22,7 +22,7 @@ int main(int argc,char**argv){
     if(!a||avr_init(a))return 2;
     a->frequency=16000000;
     avr_loadcode(a,program,(uint32_t)n,0);
-    int saw_out=0,saw_after=0,saw_stop=0;
+    int saw_stop=0;
     unsigned cycles=0,steps=0;
     for(unsigned i=0;i<64;i++){
         int rc=avr_run(a);
@@ -33,9 +33,9 @@ int main(int argc,char**argv){
         const unsigned pc=(unsigned)a->pc/2U;
         cycles=(unsigned)a->cycle;
         steps=i+1;
-        if(a->data[20]||saw_out) saw_out=1;
-        if(saw_out&&pc>=0x32+nops)saw_after=1;
-        if(saw_after&&!a->data[0x81])saw_stop=1;
+        /* PC is a word address; .org 0x40 places init at word 0x20.
+         * IN r21 at 0x32+nops has retired when PC reaches 0x33+nops. */
+        if(pc>=0x33+nops && a->data[0x81]==0) saw_stop=1;
         printf("NU019_REF_GUEST ocr=%u nops=%u step=%u pc_word=%04x "
                "cycles=%u r19=%02x r20=%02x r21=%02x "
                "tifr1=%02x tccr1b=%02x\n",
@@ -43,7 +43,7 @@ int main(int argc,char**argv){
                (unsigned)a->data[19],(unsigned)a->data[20],
                (unsigned)a->data[21],(unsigned)a->data[0x36],
                (unsigned)a->data[0x81]);
-        if(saw_stop&&pc>=0x36+nops)break;
+        if(saw_stop)break;
     }
     printf("NU019_REF_SUMMARY ocr=%u nops=%u steps=%u cycles=%u "
            "r19_before=%02x r20_after=%02x r21_stopped=%02x "
