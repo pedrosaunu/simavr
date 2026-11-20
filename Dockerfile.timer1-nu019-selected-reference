@@ -1,0 +1,31 @@
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr binutils-avr avr-libc \
+    python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eu; \
+ make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+ tests/weightos_timer1_nu019_same_cycle_probe.c \
+ -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/nu019_probe; \
+ : > /tmp/nu019-selected.raw; \
+ for case in 2:0 3:0 4:0 4:1; do \
+  ocr="$(echo "$case"|cut -d: -f1)"; \
+  nops="$(echo "$case"|cut -d: -f2)"; \
+  avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+   -DNU019_OCR_A=$ocr -DNU019_NOP_COUNT=$nops -x assembler-with-cpp \
+   tests/weightos_timer1_nu019_same_cycle.S -o /tmp/nu019.elf; \
+  avr-objcopy -O binary -j .text /tmp/nu019.elf /tmp/nu019.bin; \
+  sha="$(sha256sum /tmp/nu019.bin|cut -d' ' -f1)"; \
+  printf 'NU019_SELECTED_BEGIN ocr=%s nops=%s sha256=%s\n' "$ocr" "$nops" "$sha" >> /tmp/nu019-selected.raw; \
+  printf 'NU019_WORDS %s\n' "$(od -An -tu2 -v /tmp/nu019.bin|xargs)" >> /tmp/nu019-selected.raw; \
+  LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+    /tmp/nu019_probe /tmp/nu019.bin "$ocr" "$nops" >> /tmp/nu019-selected.raw 2>&1; \
+  echo NU019_SELECTED_END >> /tmp/nu019-selected.raw; \
+ done; \
+ python3 tests/weightos_timer1_nu019_selected_audit.py \
+    /tmp/nu019-selected.raw; \
+ echo NU019_GUEST_BINARIES_REPRODUCIBLE_PASS
+CMD ["/bin/sh","-c","exit 0"]
