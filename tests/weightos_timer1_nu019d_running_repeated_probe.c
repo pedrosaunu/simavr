@@ -24,6 +24,10 @@ static int requested_level(int mode,int age){
   }
 }
 int main(int argc,char **argv){
+ /* simavr emits timer callbacks to stderr. Flush each complete guest
+  * record on newline before the next avr_run() to prevent stdio block
+  * buffering from interleaving the independently observed log lines. */
+ if(setvbuf(stdout,NULL,_IOLBF,0))return 2;
  if(argc!=4)return 2;
  int mode=atoi(argv[2]);int pad=atoi(argv[3]);
  if(mode<0||mode>5||pad<0||pad>4||(pad%2))return 2;
