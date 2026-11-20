@@ -1012,11 +1012,12 @@ avr_timer_irq_icp(
     /* Observational only: an independently applied external PB0 edge
      * arrives after a CPU instruction retirement in the harness. No
      * guest register or timer state is modified by this trace. */
-    if (p->icr.raised.reg == 0x36)
+    if (p->icr.raised.reg == 0x36) {
         fprintf(stderr,
           "NU019C_REF_EVENT source=ICF1 cpu_cycle=%llu flag_before=%02x capture=%04x edge=%u\n",
           (unsigned long long)avr->cycle,(unsigned)avr->data[0x36],
           (unsigned)tcnt,(unsigned)value);
+    }
 	avr_raise_interrupt(avr, &p->icr);
 }
 
