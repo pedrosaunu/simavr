@@ -1,6 +1,7 @@
 """Six SHA-pinned real AVR programs/stimuli for independent ICF1/W1C.
 
 Three relative event orderings; one late edge after guest ICR low read,
+with datasheet-required TEMP high=0 even though underlying ICR1H=0x12,
 one second equal-cycle guest binary, and an explicit no-edge negative.
 No external-state injection other than real PB0 pin stimulus.
 """
@@ -48,7 +49,7 @@ expected={
  (0,0):(-1,0,0x34,0x12,0),
  (0,1):(0,0,0x34,0x12,0),
  (0,2):(1,0x20,0x34,0x12,0x20),
- (0,4):(4,0,0,0x12,0x20),
+ (0,4):(4,0,0,0,0x20),
  (2,3):(0,0,0x34,0x12,0),
  (2,-1):(None,0,0,0,0),
 }
@@ -70,6 +71,12 @@ for key,values in expected.items():
    raise ValueError("wrong external ICF1/W1C scheduling")
  if [int(fields(x)["step"]) for x in c["guest"]]!=list(range(1,len(c["guest"])+1)):
   raise ValueError("guest instruction trace incomplete")
+ if key==(0,4):
+  # Original simavr reference returned 0x12 for ICR1H, contrary to
+  # ATmega328P datasheet §§15.3/15.6. Here ICR1L was read before
+  # the capture; the subsequent ICR1H must return the old TEMP=0x00.
+  if c["summary"]["r22"]!=0:
+   raise ValueError("late capture violated shared Timer1 TEMP latch")
  output=dict(c,event_minus_w1c_cycle=diff,modified_simavr_only=True,
        physical_same_edge_priority_qualified=False)
  print("NU019C_SELECTED_EVIDENCE "+json.dumps(output,sort_keys=True,separators=(",",":")))
