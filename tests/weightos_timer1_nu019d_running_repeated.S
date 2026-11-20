@@ -13,10 +13,14 @@ start:
 init:
   ldi r16,0
   sts 0x80,r16     /* TCCR1A WGM0 */
+  ldi r16,0xff
+  sts 0x88,r16     /* OCR1AL nonzero: avoid unrelated OCF1A near zero */
+  sts 0x8a,r16     /* OCR1BL nonzero: avoid unrelated OCF1B near zero */
   ldi r16,0x41
   sts 0x81,r16     /* ICES1 rising, CS1=1, counter running */
-  ldi r17,0x20
-  out 0x16,r17     /* acknowledge any preexisting ICF1 */
+  ldi r16,0x26
+  out 0x16,r16     /* initialize: clear old compare/capture pending flags */
+  ldi r17,0x20     /* subsequent W1C clears only ICF1 */
   ldi r16,0xa5
   sts 0x0100,r16   /* experiment ARMED */
   .rept 5+NU019D_PAD
