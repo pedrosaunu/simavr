@@ -19,12 +19,12 @@ int main(int argc,char**argv){
  avr_t*a=avr_make_mcu_by_name("atmega328p");if(!a||avr_init(a))return 2;
  a->frequency=16000000;avr_loadcode(a,image,(uint32_t)n,0);
  int seen_first=0,seen_stop=0,matched=0;
- unsigned old_timer=0,now=0;
+ unsigned now=0;
  for(unsigned step=1;step<=MAX_STEPS;step++){
     int rc=avr_run(a);
     if(rc!=cpu_Running&&rc!=cpu_Sleeping)break;
     unsigned pc=(unsigned)a->pc/2U;
-    if(pc==0x2b){seen_first=1;}
+    if(pc>=0x29){seen_first=1;}
     if(!a->data[0x81]&&seen_first)seen_stop=1;
     now=(unsigned)a->data[0x84]+((unsigned)a->data[0x85]<<8);
     printf("TIMER1_W1C_GUEST_TRACE style=%u step=%u pc_word=%04x cycle=%llu "
@@ -34,9 +34,11 @@ int main(int argc,char**argv){
         (unsigned)a->data[20],(unsigned)a->data[21],
         (unsigned)a->data[22],(unsigned)a->data[23],
         (unsigned)a->data[0x36],(unsigned)a->data[0x81],now);
-    old_timer=now;
-    if(a->data[22]==0 && a->data[20]==6 && a->data[23]==0 && pc>=0x34){
-        matched=1;break;
+    if(pc==(style==0?0x32:0x31)){
+        matched=(a->data[20]==6 && a->data[22]==a->data[21]
+                 && a->data[23]==0 && seen_stop &&
+                 (style!=0 || a->data[21]==4));
+        break;
     }
  }
  printf("TIMER1_W1C_GUEST_SUMMARY style=%u before=%02x after1=%02x after2=%02x "
