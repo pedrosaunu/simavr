@@ -1,0 +1,30 @@
+# Independent host does not inject Timer1 interrupt requests.
+# Three different, hash-pinned AVR firmware binaries from same source.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates make gcc g++ libc6-dev pkg-config libelf-dev \
+  gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+  make -C simavr RELEASE=1 all; \
+  cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+    tests/weightos_timer1_compare_guest_probe.c \
+    -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf \
+    -o /tmp/timer1_compare_guest_probe; \
+  for mask in 2 4 6; do \
+    avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+      -DIRQ_MASK=$mask -x assembler-with-cpp \
+      tests/weightos_timer1_compare_guest.S \
+      -o /tmp/t1-compare-$mask.elf; \
+    avr-objcopy -O binary -j .text /tmp/t1-compare-$mask.elf /tmp/t1-compare-$mask.bin; \
+    sha256sum /tmp/t1-compare-$mask.bin; \
+    echo COMPARE_BINARY_WORDS_BEGIN_mask_$mask; \
+    od -An -tu2 -v /tmp/t1-compare-$mask.bin | xargs; \
+    echo COMPARE_BINARY_WORDS_END_mask_$mask; \
+    LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+      /tmp/timer1_compare_guest_probe /tmp/t1-compare-$mask.bin $mask; \
+  done; \
+  echo TIMER1_COMPARE_GUEST_ALL_MASKS_STRICT_PASS
+CMD ["/bin/sh","-c","exit 0"]
