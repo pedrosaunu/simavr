@@ -767,8 +767,27 @@ avr_timer_write(
 	if (new_cs != cs || new_mode != mode || new_as2 != as2) {
 	/* cs */
 		if (new_cs == 0) {
-			p->cs_div_value = 0;		// reset prescaler
-			// cancel everything
+			/*
+			 * TCNT is a retained 16-bit counter, not a derived value
+			 * that becomes zero when its overflow schedule is canceled.
+			 * Capture the *live* value before clearing the clock
+			 * selection. Otherwise a guest that stops Timer1 then
+			 * reads TCNT1L/H incorrectly observes zero despite
+			 * having counted while CS=1.
+			 *
+			 * Snapshot the currently running timer only. The existing
+			 * guest-written value is already authoritative when the
+			 * timer is halted or held by TSM.
+			 */
+			uint16_t held = p->sync_holding ? p->sync_hold_tcnt :
+				(!p->cs_div_value || !p->tov_cycles)
+					? _timer_get_tcnt(p)
+					: _avr_timer_get_current_tcnt(p);
+			avr->data[p->r_tcnt] = held & 0xff;
+			if (p->r_tcnth)
+				avr->data[p->r_tcnth] = held >> 8;
+			p->cs_div_value = 0;		// no clock selected
+			// cancel everything after preserving the live counter
 			avr_timer_cancel_all_cycle_timers(avr, p, 1);
 
 			AVR_LOG(avr, LOG_TRACE, "TIMER: %s-%c clock turned off\n",

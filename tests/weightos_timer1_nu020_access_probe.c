@@ -40,8 +40,11 @@ int main(int argc,char **argv){
    const unsigned last=(unsigned)avr->data[23];
    const unsigned desired=style==1?0:style==2?2:4;
    const unsigned final=style==2?2:0;
+   const unsigned guest_counter = (unsigned)avr->data[24] |
+                                 ((unsigned)avr->data[25] << 8);
    matched=(avr->data[20]==6&&first==desired&&avr->data[22]==desired&&
-            last==final&&flag==final&&(ctrl&7U)==(running?1U:0U));
+            last==final&&flag==final&&(ctrl&7U)==(running?1U:0U)&&
+            guest_counter>0);
    break;
   }
  }

@@ -27,5 +27,6 @@ RUN set -eux; \
     /tmp/nu020_access_probe /tmp/nu020-$running-$style.bin $style $running; \
   done; \
  done; \
- echo NU020_INDEPENDENT_14_GUEST_MATRIX_COMPLETE
+ echo NU020_INDEPENDENT_14_GUEST_MATRIX_COMPLETE; \
+ echo NU020_TIMER1_STOP_RETAINED_COUNTER_REFERENCE_PASS
 CMD ["/bin/sh","-c","exit 0"]
