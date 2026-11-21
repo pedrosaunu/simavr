@@ -49,13 +49,12 @@ static int run(const char*filename,unsigned mask) {
         unsigned long long age=ready?
              (unsigned long long)a->cycle-ready_cycle:0;
         int desired=ready?desired_level(age):0;
-        if(desired!=level){
-            avr_raise_irq(pb0,(uint32_t)desired);
-            level=desired;
-            if(level)edges++;
-            printf("NU021G_PIN mask=%02x step=%u cycle=%llu level=%d age=%llu\n",
-                mask,step,(unsigned long long)a->cycle,level,age);
-        }
+        /* Observe retired guest state BEFORE applying the next external
+         * pin transition at this same CPU-cycle boundary. The prior v1
+         * witness recorded post-drive ICF1 and is retained as evidence;
+         * this v2 ordering prevents attributing an asynchronous pin event
+         * to an instruction that had already retired.
+         */
         printf("NU021G_TRACE mask=%02x step=%u pc_word=%04x cycle=%llu "
                "r20=%02x r21=%02x r22=%02x r23=%02x tifr1=%02x timsk1=%02x "
                "I=%u sp_delta=%d saved_pc=%04x pin=%d\n",
@@ -64,6 +63,13 @@ static int run(const char*filename,unsigned mask) {
                (unsigned)a->data[22],(unsigned)a->data[23],
                (unsigned)a->data[0x36],(unsigned)a->data[0x6f],
                (unsigned)a->sreg[S_I],(int)sp_init-(int)sp,saved,level);
+        if(desired!=level){
+            avr_raise_irq(pb0,(uint32_t)desired);
+            level=desired;
+            if(level)edges++;
+            printf("NU021G_PIN mask=%02x step=%u cycle=%llu level=%d age=%llu\n",
+                mask,step,(unsigned long long)a->cycle,level,age);
+        }
         if(a->data[20]>=4 && a->data[21]>=((mask&2)?2U:0U) &&
            a->data[22]>=((mask&4)?2U:0U) && sp==sp_init &&
            a->sreg[S_I]){done=1;break;}
