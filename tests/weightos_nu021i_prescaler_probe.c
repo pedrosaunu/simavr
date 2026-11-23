@@ -56,7 +56,7 @@ static int probe(const char *filename, unsigned case_id) {
       for(unsigned j=0;j<count;j++)
         for(unsigned b=0;b<TRACE_BYTES;b++)
           printf("%02x",(unsigned)trace[first+j][b]);
-      putchar('\\n');
+      putchar('\n');
     }
   }
   unsigned final=(unsigned)avr->data[29]&6U;
