@@ -524,8 +524,12 @@ avr_callback_run_raw(
 		/* Note: checking interrupt_state here is completely superfluous, however
 			as interrupt_state tells us all we really need to know, here
 			a simple check here may be cheaper than a call not needed. */
-		if (avr->interrupt_state)
-			avr_service_interrupts(avr);
+        /* NU021J: TIMSK1 may be set AFTER TIFR1 has already latched
+         * flags under CLI. Must check flag-mask transitions even while
+         * the cached irq_state was previously zero; the interrupt
+         * arbiter remains responsible for actual vector entry.
+         */
+        avr_service_interrupts(avr);
 	}
 }
 
