@@ -1,0 +1,26 @@
+# Independent AVR guest timing oracle NU-021H.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+ ca-certificates make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+ make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+  tests/weightos_nu021h_tcnt_block_probe.c \
+  -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/nu021h_probe; \
+ for case in 0 1 2 3 4 5 6 7 8; do \
+  avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -DNU021H_CASE=$case \
+   -x assembler-with-cpp tests/weightos_nu021h_tcnt_block.S \
+   -o /tmp/nu021h-$case.elf; \
+  avr-objcopy -O binary -j .text /tmp/nu021h-$case.elf /tmp/nu021h-$case.bin; \
+  sha256sum /tmp/nu021h-$case.bin; \
+  echo NU021H_WORDS_BEGIN_$case; \
+  od -An -tu2 -v /tmp/nu021h-$case.bin | xargs; \
+  echo NU021H_WORDS_END_$case; \
+  LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+   /tmp/nu021h_probe /tmp/nu021h-$case.bin $case; \
+ done; \
+ echo NU021H_NINE_REAL_GUESTS_STRICT_PASS
+CMD ["/bin/sh","-c","exit 0"]
