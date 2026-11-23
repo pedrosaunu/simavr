@@ -1,0 +1,29 @@
+# Three actual ATmega328P AVR programs and external PB0 input only.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+ ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+ make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+   tests/weightos_nu021j_irq_probe.c -Lsimavr/obj-x86_64-linux-gnu \
+   -lsimavr -lelf -o /tmp/nu021j_probe; \
+ failures=0; \
+ for case in 0 1 2; do \
+  avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -DNU021J_CASE=$case \
+    -x assembler-with-cpp tests/weightos_nu021j_irq.S \
+    -o /tmp/nu021j-$case.elf; \
+  avr-objcopy -O binary -j .text /tmp/nu021j-$case.elf /tmp/nu021j-$case.bin; \
+  sha256sum /tmp/nu021j-$case.bin; \
+  echo NU021J_WORDS_BEGIN_$case; \
+  od -An -tu2 -v /tmp/nu021j-$case.bin | xargs; \
+  echo NU021J_WORDS_END_$case; \
+  LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+   /tmp/nu021j_probe /tmp/nu021j-$case.bin $case || failures=$((failures+1)); \
+ done; \
+ echo NU021J_REFERENCE_SUMMARY cases=3 failed=$failures; \
+ test "$failures" -eq 0; \
+ echo NU021J_REAL_FIRMWARE_REFERENCE_PASS
+CMD ["/bin/sh","-c","exit 0"]
