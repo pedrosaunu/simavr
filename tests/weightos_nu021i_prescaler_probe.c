@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #define MAX_STEPS 350
+#define TRACE_BYTES 15
 static unsigned expected(unsigned case_id) {
   return (case_id==7 || case_id==11)?6U:4U;
 }
@@ -19,6 +20,7 @@ static int probe(const char *filename, unsigned case_id) {
   if(!avr || avr_init(avr))return 3;
   avr->frequency=16000000;avr_loadcode(avr,image,(uint32_t)bytes,0);
   unsigned done=0,steps=0,write_mark_cycle=0;
+  uint8_t trace[MAX_STEPS][TRACE_BYTES]={{0}};
   for(unsigned i=1;i<=MAX_STEPS;i++){
     int status=avr_run(avr);
     if(status!=cpu_Running && status!=cpu_Sleeping){
@@ -30,24 +32,32 @@ static int probe(const char *filename, unsigned case_id) {
     unsigned cs=(unsigned)avr->data[0x81]&7U;
     if(!write_mark_cycle && avr->data[24]==0xa5 && avr->data[25]==0x5a)
       write_mark_cycle=(unsigned)avr->cycle;
-    /* Railway's build-log splitter can drop the row immediately at a
-     * chunk boundary (~every 32 lines). Repeat ONLY boundary-adjacent
-     * observations. The evidence parser deduplicates by (case,step) and
-     * requires identical copies; it never interpolates missing states.
+    /* Record every retired AVR observation in a lossless binary table.
+     * Streaming 1600 separate lines through Railway can lose periodic lines;
+     * instead emit 16-row hex chunks twice AFTER guest execution.
      */
-    unsigned copies=((i%32U)<=3U)?2U:1U;
-    for(unsigned copy=0;copy<copies;copy++)
-    printf("NU021I_TRACE case=%u step=%u pc_word=%04x cycle=%llu "
-      "r20=%02x r21=%02x r24=%02x r25=%02x "
-      "r26=%02x r27=%02x r28=%02x r29=%02x "
-      "tifr1=%02x tccr1b=%02x\n",
-      case_id,i,pc,(unsigned long long)avr->cycle,
-      (unsigned)avr->data[20],(unsigned)avr->data[21],
-      (unsigned)avr->data[24],(unsigned)avr->data[25],
-      (unsigned)avr->data[26],(unsigned)avr->data[27],
-      (unsigned)avr->data[28],(unsigned)avr->data[29],flags,cs);
+    uint8_t *rec=trace[i-1];
+    const unsigned cyc=(unsigned)avr->cycle;
+    rec[0]=(uint8_t)i;
+    rec[1]=(uint8_t)pc;rec[2]=(uint8_t)(pc>>8);
+    rec[3]=(uint8_t)cyc;rec[4]=(uint8_t)(cyc>>8);
+    rec[5]=avr->data[20];rec[6]=avr->data[21];
+    rec[7]=avr->data[24];rec[8]=avr->data[25];
+    rec[9]=avr->data[26];rec[10]=avr->data[27];
+    rec[11]=avr->data[28];rec[12]=avr->data[29];
+    rec[13]=(uint8_t)flags;rec[14]=(uint8_t)cs;
     steps=i;
     if(pc>=bytes/2U-3U && avr->data[25]==0x5a){done=1;break;}
+  }
+  for(unsigned first=0;first<steps;first+=16U){
+    unsigned count=steps-first<16U?steps-first:16U;
+    for(unsigned copy=0;copy<2U;copy++){
+      printf("NU021I_PACK case=%u first=%u rows=%u hex=",case_id,first+1U,count);
+      for(unsigned j=0;j<count;j++)
+        for(unsigned b=0;b<TRACE_BYTES;b++)
+          printf("%02x",(unsigned)trace[first+j][b]);
+      putchar('\\n');
+    }
   }
   unsigned final=(unsigned)avr->data[29]&6U;
   unsigned want=expected(case_id);
