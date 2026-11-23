@@ -505,9 +505,9 @@ avr_timer_tcnt_write(
      * receive independent architectural acceptance.
      */
     if (!p->tcnt_internal_reschedule && p->name == '1' && p->r_tcnth &&
-            p->wgm_op_mode_kind == avr_timer_wgm_normal &&
-            (p->cs_div_value == 0 || p->cs_div_value == 1 ||
-             p->cs_div_value == 8)) {
+            (p->cs_div_value == 0 ||
+             (p->wgm_op_mode_kind == avr_timer_wgm_normal &&
+              (p->cs_div_value == 1 || p->cs_div_value == 8)))) {
         /* A real guest low-byte commit inhibits the NEXT timer tick. 
          * If CS is zero, defer the deadline until first clock enabling.
          */
