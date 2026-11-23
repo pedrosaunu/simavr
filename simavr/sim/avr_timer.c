@@ -504,13 +504,26 @@ avr_timer_tcnt_write(
      * the bounded compare suppression, until other dividers and modes
      * receive independent architectural acceptance.
      */
-    if (p->name == '1' && p->r_tcnth &&
+    if (!p->tcnt_internal_reschedule && p->name == '1' && p->r_tcnth &&
             p->wgm_op_mode_kind == avr_timer_wgm_normal &&
-            p->cs_div_value == 1) {
-        p->tcnt_write_block_cycle = avr->cycle + 1;
-        fprintf(stderr, "NU021H_TCNT_WRITE cpu_cycle=%llu block_cycle=%llu\\n",
-                (unsigned long long)avr->cycle,
-                (unsigned long long)p->tcnt_write_block_cycle);
+            (p->cs_div_value == 0 || p->cs_div_value == 1 ||
+             p->cs_div_value == 8)) {
+        /* A real guest low-byte commit inhibits the NEXT timer tick. 
+         * If CS is zero, defer the deadline until first clock enabling.
+         */
+        p->tcnt_compare_block_pending = p->cs_div_value == 0;
+        if (p->cs_div_value) {
+            uint64_t div = p->cs_div_value;
+            uint64_t phase = p->sync_prescaler ?
+                    (avr->cycle - p->sync_epoch) % div : 0;
+            p->tcnt_write_block_cycle = avr->cycle + div - phase;
+        } else {
+            p->tcnt_write_block_cycle = 0;
+        }
+        fprintf(stderr, "NU021I_TCNT_WRITE cycle=%llu cs=%u block=%llu pending=%u\n",
+                (unsigned long long)avr->cycle,(unsigned)p->cs_div_value,
+                (unsigned long long)p->tcnt_write_block_cycle,
+                (unsigned)p->tcnt_compare_block_pending);
     }
 	if (p->sync_holding) {
 		p->sync_hold_tcnt = _timer_get_tcnt(p);
@@ -874,7 +887,36 @@ avr_timer_write(
 		p->wgm_op_mode_kind = p->mode.kind;
 		p->wgm_op_mode_size = (1 << p->mode.size) - 1;
 
+        /* Reconfiguring CS=0 to a clock must retain the guest-written
+         * count, unlike the old zero-based reschedule. Note the counter
+         * before reconfigure, which may update timer internal bases.
+         */
+        uint16_t kept = (uint16_t)avr->data[p->r_tcnt] |
+                 (p->r_tcnth ? ((uint16_t)avr->data[p->r_tcnth] << 8) : 0);
 		avr_timer_reconfigure(p, 1);
+        if (cs == 0 && p->name == '1' &&
+                p->wgm_op_mode_kind == avr_timer_wgm_normal &&
+                (p->cs_div_value == 1 || p->cs_div_value == 8)) {
+            /* Simavr-internal schedule recovery: NO new guest TCNT write,
+             * NO shared-prescaler reset, NO host-injected AVR interrupt.
+             */
+            avr->data[p->r_tcnt] = (uint8_t)kept;
+            if (p->r_tcnth)avr->data[p->r_tcnth] = (uint8_t)(kept >> 8);
+            p->tcnt_internal_reschedule = 1;
+            avr_timer_tcnt_write(avr,p->r_tcnt,(uint8_t)kept,p);
+            p->tcnt_internal_reschedule = 0;
+            if (p->tcnt_compare_block_pending) {
+                uint64_t div = p->cs_div_value;
+                uint64_t phase = p->sync_prescaler ?
+                    (avr->cycle - p->sync_epoch) % div : 0;
+                p->tcnt_write_block_cycle = avr->cycle + div - phase;
+                p->tcnt_compare_block_pending = 0;
+                fprintf(stderr, "NU021I_RESUME cycle=%llu retained=%u div=%llu first_block_tick=%llu\n",
+                    (unsigned long long)avr->cycle,(unsigned)kept,
+                    (unsigned long long)div,
+                    (unsigned long long)p->tcnt_write_block_cycle);
+            }
+        }
 	}
 }
 
