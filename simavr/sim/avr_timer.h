@@ -183,6 +183,9 @@ typedef struct avr_timer_t {
      * This experimental fork does not claim full read/write TEMP coverage.
      */
     uint8_t         read_temp_high;
+    /* NU-021H: bounded WGM0 /1 TCNT1 write inhibit for next timer tick.
+     * This is reference simulator state, not WeightOS/AVR guest state. */
+    uint64_t        tcnt_write_block_cycle;
 
 	avr_regbit_t	wgm[4];
 	avr_timer_wgm_t	wgm_op[16];
