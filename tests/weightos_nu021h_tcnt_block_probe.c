@@ -40,7 +40,9 @@ static int run(const char *path,unsigned testcase){
     (unsigned)a->data[26],(unsigned)a->data[27],
     (unsigned)a->data[28],(unsigned)a->data[29],
     flags,(unsigned)a->data[0x81]);
-  if(a->data[0x101]==0x5a){done=1;break;}
+  /* Stop once the CPU has completed all guest TIFR snapshots and
+   * guest TCNT1 readbacks, before simavr reports cpu_Done at image end. */
+  if(pc >= n/2U-3U && a->data[25]==0x5a){done=1;break;}
  }
  unsigned actual=(unsigned)a->data[29]&6;
  unsigned want=expected(testcase);
