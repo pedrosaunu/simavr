@@ -30,6 +30,13 @@ static int probe(const char *filename, unsigned case_id) {
     unsigned cs=(unsigned)avr->data[0x81]&7U;
     if(!write_mark_cycle && avr->data[24]==0xa5 && avr->data[25]==0x5a)
       write_mark_cycle=(unsigned)avr->cycle;
+    /* Railway's build-log splitter can drop the row immediately at a
+     * chunk boundary (~every 32 lines). Repeat ONLY boundary-adjacent
+     * observations. The evidence parser deduplicates by (case,step) and
+     * requires identical copies; it never interpolates missing states.
+     */
+    unsigned copies=((i%32U)<=3U)?2U:1U;
+    for(unsigned copy=0;copy<copies;copy++)
     printf("NU021I_TRACE case=%u step=%u pc_word=%04x cycle=%llu "
       "r20=%02x r21=%02x r24=%02x r25=%02x "
       "r26=%02x r27=%02x r28=%02x r29=%02x "
