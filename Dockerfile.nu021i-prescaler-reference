@@ -1,0 +1,29 @@
+# NU-021I: 12 independent AVR binaries, strict spec reference contrast.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+ ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+ make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+   tests/weightos_nu021i_prescaler_probe.c \
+   -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/nu021i_probe; \
+ fail=0; \
+ for case in 0 1 2 3 4 5 6 7 8 9 10 11; do \
+  avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -DNU021I_CASE=$case \
+    -x assembler-with-cpp tests/weightos_nu021i_prescaler.S \
+    -o /tmp/nu021i-$case.elf; \
+  avr-objcopy -O binary -j .text /tmp/nu021i-$case.elf /tmp/nu021i-$case.bin; \
+  sha256sum /tmp/nu021i-$case.bin; \
+  echo NU021I_WORDS_BEGIN_$case; \
+  od -An -tu2 -v /tmp/nu021i-$case.bin | xargs; \
+  echo NU021I_WORDS_END_$case; \
+  LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu \
+    /tmp/nu021i_probe /tmp/nu021i-$case.bin $case || fail=$((fail+1)); \
+ done; \
+ echo NU021I_REFERENCE_SUMMARY case_count=12 failed=$fail; \
+ test "$fail" -eq 0; \
+ echo NU021I_TWELVE_REAL_FIRMWARE_REFERENCE_PASS
+CMD ["/bin/sh","-c","exit 0"]
