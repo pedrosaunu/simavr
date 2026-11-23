@@ -186,6 +186,10 @@ typedef struct avr_timer_t {
     /* NU-021H: bounded WGM0 /1 TCNT1 write inhibit for next timer tick.
      * This is reference simulator state, not WeightOS/AVR guest state. */
     uint64_t        tcnt_write_block_cycle;
+    /* NU-021I: hold the post-write inhibit while CS=0, and distinguish
+     * internal Timer1 rescheduling from an actual CPU TCNT1 write. */
+    uint8_t         tcnt_compare_block_pending;
+    uint8_t         tcnt_internal_reschedule;
 
 	avr_regbit_t	wgm[4];
 	avr_timer_wgm_t	wgm_op[16];
