@@ -83,6 +83,20 @@ avr_timer_comp(
 	avr_irq_t * irq = &p->io.irq[TIMER_IRQ_OUT_COMP + comp];
 	uint32_t flags = 0;
 
+    /* NU-021H strict WGM0 CS1 reference correction: a CPU write to
+     * TCNT1 inhibits the comparison at the NEXT Timer1 oscillator tick,
+     * per ATmega328P datasheet section 15.7.2. Do not mask later ticks,
+     * do not fake guest TIFR bits and do not alter non-Timer1 profiles.
+     * The previously failing uncorrected reference is retained separately.
+     */
+    if (raise_interrupt && p->tcnt_write_block_cycle &&
+            when == p->tcnt_write_block_cycle) {
+        if (p->name == '1')
+            fprintf(stderr, "NU021H_BLOCK source=%u callback_when=%llu write_next_tick=%llu\\n",
+                    (unsigned)comp, (unsigned long long)when,
+                    (unsigned long long)p->tcnt_write_block_cycle);
+        return 0;
+    }
 	if (raise_interrupt) {
         /* NU-019 observation only; no state mutation. Use recorded
          * scheduled callback cycle and the timer host clock separately.
@@ -485,6 +499,19 @@ avr_timer_tcnt_write(
 {
 	avr_timer_t * p = (avr_timer_t *)param;
 	avr_core_watch_write(avr, addr, v);
+    /* This callback handles TCNTnL, not the high-byte TEMP latch.
+     * Only the experimental ATmega328P Timer1 WGM0 /1 profile uses
+     * the bounded compare suppression, until other dividers and modes
+     * receive independent architectural acceptance.
+     */
+    if (p->name == '1' && p->r_tcnth &&
+            p->wgm_op_mode_kind == avr_timer_wgm_normal &&
+            p->cs_div_value == 1) {
+        p->tcnt_write_block_cycle = avr->cycle + 1;
+        fprintf(stderr, "NU021H_TCNT_WRITE cpu_cycle=%llu block_cycle=%llu\\n",
+                (unsigned long long)avr->cycle,
+                (unsigned long long)p->tcnt_write_block_cycle);
+    }
 	if (p->sync_holding) {
 		p->sync_hold_tcnt = _timer_get_tcnt(p);
 		return;
