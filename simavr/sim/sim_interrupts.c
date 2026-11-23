@@ -230,6 +230,26 @@ avr_service_interrupts(
 {
 	int cnt, min, mini;
 
+    /* NU021J experimental correction: a Timer1 event may set TIFR1
+     * while TIMSK1/SREG.I is disabled. When firmware later enables that
+     * source, an already-raised hardware flag must become serviceable.
+     * The previous simavr path queued only events whose mask was
+     * enabled at the original event edge, losing masked-pending IRQs.
+     * This polls existing *peripheral-raised* bits, never fabricates
+     * hardware flags or directly enters ISR from the host harness.
+     */
+    if (avr->sreg[S_I]) {
+        avr_int_table_p pending_table = &avr->interrupts;
+        for (int i=0;i<pending_table->vector_count;i++) {
+            avr_int_vector_t *v=pending_table->vector[i];
+            if (v->raised.reg && !v->pending &&
+                avr_regbit_get(avr,v->raised) &&
+                avr_regbit_get(avr,v->enable)) {
+                avr_raise_interrupt(avr,v);
+            }
+        }
+    }
+
 	if (!avr->sreg[S_I] || !avr->interrupt_state)
 		return;
 
