@@ -62,7 +62,7 @@ init:
 loop:
   nop                     /* SEI one-instruction latency */
   rjmp loop
-.org 0x150
+.org 0x250
 capture_isr:
   inc r20
   ldi r17,AFTER_CAPT
