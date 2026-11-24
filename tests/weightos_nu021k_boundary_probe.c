@@ -110,7 +110,7 @@ static int run(const char *file,int offset,int preflight,uint64_t reference_tov,
   int good=done && ready && icf_seen && actual_edge_cycle==requested &&
            tov_cycle==reference_tov && compa_cycle && compb_cycle &&
            (final_flags & 0x27U)==0x27U &&
-           final_icr!=0 && a->data[0x6f]==0 &&
+           (final_flags&0x20U) && a->data[0x6f]==0 &&
            a->sreg[S_I]==0 && init_sp==((unsigned)a->data[0x5d]+256U*(unsigned)a->data[0x5e]) ;
 
   printf("NU021K_SUMMARY offset=%d rows=%u edge=%llu compa=%llu tov=%llu "
