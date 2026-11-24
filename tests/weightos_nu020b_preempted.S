@@ -100,7 +100,7 @@ observe:
 done:
  nop
  rjmp done
-.org 0x200
+.org 0x280
 capture:
  push r16
  in r16,0x3f
