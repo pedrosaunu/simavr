@@ -15,7 +15,7 @@ int main(int argc,char**argv){
   unsigned old=a->pc;unsigned opcode=word(a->flash,old);
   a->run_cycle_limit=1;a->run_cycle_count=1;
   int rc=avr_run(a);
-  if(rc!=cpu_Running){printf("NU012A_STOP rc=%d pc=%u old=%u opcode=%u r24=%u cycle=%llu\n",rc,a->pc/2,old/2,opcode,a->data[24],(unsigned long long)a->cycle);return 4;}
+  if(rc!=cpu_Running && !(rc==cpu_Done && a->data[24]==0x5a && a->pc/2==65 && opcode==0xe58a)){printf("NU012A_STOP rc=%d pc=%u old=%u opcode=%u r24=%u cycle=%llu\n",rc,a->pc/2,old/2,opcode,a->data[24],(unsigned long long)a->cycle);return 4;}
   if(opcode==0x95e8)spm++;
   printf("NU012A_ROW %u,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",i+1,(unsigned long long)a->cycle,a->pc/2,opcode,a->data[0x57],word(a->flash,0x80),word(a->flash,0x82),word(a->flash,0x84),a->data[0],a->data[1],a->data[20],a->data[21],a->data[24],word(a->data,30),spm);
   if(a->data[24]==0x5a&&a->pc/2==65){done=1;last=i+1;break;}
