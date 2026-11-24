@@ -23,7 +23,7 @@ int main(void){
   for(unsigned k=1;k<=2;k++){
    if(avr_run(a)!=cpu_Running)return 5;
    unsigned sreg=0;for(unsigned j=0;j<8;j++)sreg|=(a->sreg[j]?1U:0U)<<j;
-   printf("NU006B_ROW %u,%u,%u,%u,%u,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",op,follow,take,k,a->pc/2,(unsigned long long)a->cycle,word(a->data,0x5d),sreg,a->data[16],a->data[17],a->data[18],a->data[19],a->data[20],a->data[0x100],a->data[0x13f],a->data[0x13e]);
+   for(unsigned copy=0;copy<2;copy++)printf("NU006B_ROW %u,%u,%u,%u,%u,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",op,follow,take,k,a->pc/2,(unsigned long long)a->cycle,word(a->data,0x5d),sreg,a->data[16],a->data[17],a->data[18],a->data[19],a->data[20],a->data[0x100],a->data[0x13f],a->data[0x13e]);
   }
  }
  avr_terminate(a);puts("NU006B_SUMMARY cases=50 rows=100");return 0;
