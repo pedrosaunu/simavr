@@ -26,7 +26,7 @@ static int run(const char *file,int offset,int preflight,uint64_t reference_tov,
   avr_raise_irq(pb0,0);avr_loadcode(a,img,(uint32_t)bytes,0);
   uint8_t packed[MAX_STEPS][FIELD_BYTES]={{0}};
   uint64_t tov_cycle=0,compa_cycle=0,compb_cycle=0,ready_cycle=0,actual_edge_cycle=0;
-  unsigned prev_flags=0,ready=0,observations=0,done=0,icf_seen=0,pre_guard=0;
+  unsigned prev_flags=0,ready=0,observations=0,done=0,icf_seen=0;
   int level=0;unsigned final_flags=0,final_icr=0;
   unsigned init_sp=(unsigned)a->data[0x5d]+256U*(unsigned)a->data[0x5e];
   uint64_t requested=reference_tov+(int64_t)offset;
