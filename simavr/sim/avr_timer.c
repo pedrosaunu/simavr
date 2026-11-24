@@ -372,7 +372,17 @@ avr_timer_tov(
             fprintf(stderr, "NU019T_REF_EVENT source=TOV1 callback_when=%llu cpu_cycle=%llu flag_before=%02x\n",
                     (unsigned long long)when, (unsigned long long)avr->cycle,
                     (unsigned)avr->data[0x36]);
-		avr_raise_interrupt(avr, &p->overflow);
+        /* Timer1 CTC TOP restart is not a MAX overflow (datasheet
+         * 7810D 15.9.2, 15.11.9). The periodic callback still schedules
+         * the next TOP boundary and compare events below. Only the
+         * internal-clock Timer1 CTC path is changed here. */
+        if (p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_ctc) {
+            if (p->tov_top == 0xffff)
+                avr_raise_interrupt(avr, &p->overflow);
+            if (p->mode.top == avr_timer_wgm_reg_icr)
+                avr_raise_interrupt(avr, &p->icr);
+        } else
+            avr_raise_interrupt(avr, &p->overflow);
     }
 	p->tov_base = when;
 
@@ -736,7 +746,8 @@ avr_timer_reconfigure(
 			avr_timer_configure(p, p->cs_div_value, p->wgm_op_mode_size, reset);
 			break;
 		case avr_timer_wgm_ctc: {
-			avr_timer_configure(p, p->cs_div_value, _timer_get_ocr(p, AVR_TIMER_COMPA), reset);
+			avr_timer_configure(p, p->cs_div_value,
+                p->mode.top == avr_timer_wgm_reg_icr ? _timer_get_icr(p) : _timer_get_ocr(p, AVR_TIMER_COMPA), reset);
 		}	break;
 		case avr_timer_wgm_pwm: {
 			uint16_t top = (p->mode.top == avr_timer_wgm_reg_ocra) ?
