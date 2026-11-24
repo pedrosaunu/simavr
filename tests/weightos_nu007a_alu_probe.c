@@ -1,4 +1,4 @@
-/* NU-007A: independently execute a real five-word AVR fixture per case.
+/* NU-007A: independently execute a real eight-instruction AVR fixture per case.
  * No injected GPR or status state: LDI/OUT execute from reset. */
 #include "sim_avr.h"
 #include <stdio.h>
@@ -25,12 +25,12 @@ int main(void){
   for(unsigned f=0;f<sizeof flags/sizeof *flags;f++){
    unsigned x=operands[i],y=operands[j],s=flags[f];
    uint16_t w=ops[op].word;if(ops[op].imm)w|=((y&0xf0)<<4)|(y&15);
-   uint16_t code[]={ldi(16,x),ldi(17,y),ldi(18,s),0xbf2f,w,0,0}; /* OUT SREG,r18 */
+   uint16_t code[]={ldi(19,0),0x2e03,0x2e13,ldi(16,x),ldi(17,y),ldi(18,s),0xbf2f,w,0,0}; /* OUT SREG,r18 */
    uint8_t image[sizeof code];for(unsigned k=0;k<sizeof code/2;k++){image[2*k]=code[k]&255;image[2*k+1]=code[k]>>8;}
    avr_reset(a);avr_loadcode(a,image,sizeof image,0);a->cycle=0;
-   for(unsigned k=0;k<4;k++)if(avr_run(a)!=cpu_Running)return 3;
+   for(unsigned k=0;k<7;k++)if(avr_run(a)!=cpu_Running)return 3;
    unsigned before=0;for(unsigned k=0;k<8;k++)before|=(a->sreg[k]?1U:0U)<<k;
-   if(a->pc!=8||a->data[16]!=x||a->data[17]!=y||before!=s||a->cycle!=4)return 4;
+   if(a->pc!=14||a->data[16]!=x||a->data[17]!=y||before!=s||a->cycle!=7)return 4;
    if(avr_run(a)!=cpu_Running)return 5;
    unsigned status=0;for(unsigned k=0;k<8;k++)status|=(a->sreg[k]?1U:0U)<<k;
    printf("%s,%u,%u,%u,%u,%u,%u",ops[op].name,x,y,s,a->pc/2,status,(unsigned)a->cycle);
