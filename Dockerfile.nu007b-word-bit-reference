@@ -1,0 +1,10 @@
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev python3 && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Wno-misleading-indentation -Isimavr/sim tests/weightos_nu007b_word_bit_probe.c -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/probe; \
+ LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe > /tmp/alu.csv; \
+ python3 tests/weightos_nu007b_digest.py /tmp/alu.csv
+CMD ["/bin/sh","-c","exit 0"]
