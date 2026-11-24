@@ -11,6 +11,7 @@ int main(int argc,char**argv){
  if(!n||n>=sizeof image||(n&1))return 2;
  avr_t*a=avr_make_mcu_by_name("atmega328p");if(!a||avr_init(a))return 3;
  a->frequency=16000000;a->sleep=no_wall_sleep;avr_loadcode(a,image,(uint32_t)n,0);
+ uint16_t rows[500][21]={{0}};
  unsigned steps=0,entries=0,sleeps=0,errors=0,done=0,last_round=0;
  for(unsigned i=1;i<=500;i++){
   int rc=avr_run(a);if(rc!=cpu_Running&&rc!=cpu_Sleeping){errors++;break;}
@@ -24,9 +25,19 @@ int main(int argc,char**argv){
    entries++;
   }
   if(a->data[0x101]!=0x69||a->data[0x12b]!=0xd2)errors++;
-  printf("NU008A_ROW %u,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
-    ++steps,(unsigned long long)a->cycle,pc,sp,sreg,sleep,round,a->data[0x53],a->data[0x36],a->data[0x6f],a->data[16],a->data[17],a->data[20],a->data[21],a->data[22],a->data[23],a->data[24],a->data[25],a->data[0x13f],a->data[0x13e],a->data[0x81]);
+  unsigned values[21]={steps+1,(unsigned)a->cycle,pc,sp,sreg,sleep,round,a->data[0x53],a->data[0x36],a->data[0x6f],a->data[16],a->data[17],a->data[20],a->data[21],a->data[22],a->data[23],a->data[24],a->data[25],a->data[0x13f],a->data[0x13e],a->data[0x81]};
+  for(unsigned k=0;k<21;k++){if(values[k]>65535)errors++;rows[steps][k]=values[k];}
+  steps++;
   if(round==3&&a->data[25]==3&&sp==0x13f){done=1;break;}
+ }
+ for(unsigned i=0;i<steps;i+=3){
+  unsigned count=steps-i<3?steps-i:3;
+  for(unsigned copy=0;copy<2;copy++){
+   printf("NU008A_PACK start=%u count=%u hex=",i,count);
+   for(unsigned j=i;j<i+count;j++)for(unsigned k=0;k<21;k++)
+    printf("%02x%02x",rows[j][k]&255,rows[j][k]>>8);
+   putchar('\n');
+  }
  }
  int pass=done&&entries==3&&sleeps==3&&!errors&&a->data[20]==1&&a->data[21]==1&&a->data[22]==1&&a->data[24]==3;
  printf("NU008A_SUMMARY steps=%u entries=%u sleeps=%u done=%u errors=%u pass=%d\n",steps,entries,sleeps,done,errors,pass);
