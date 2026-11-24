@@ -1,0 +1,11 @@
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim tests/weightos_nu040a_integrated_probe.c -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/probe; \
+ avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -x assembler-with-cpp tests/weightos_nu040a_integrated.S -o /tmp/spm.elf; \
+ avr-objcopy -O binary -j .text /tmp/spm.elf /tmp/spm.bin; sha256sum /tmp/spm.bin; \
+ LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/spm.bin
+CMD ["/bin/sh","-c","exit 0"]
