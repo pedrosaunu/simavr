@@ -15,7 +15,7 @@ RUN set -eux; \
  avr-objcopy -O binary -j .text /tmp/nu021k.elf /tmp/nu021k.bin; \
  sha256sum /tmp/nu021k.bin; \
  echo NU021K_WORDS_BEGIN; \
- od -An -tu2 -v /tmp/nu021k.bin | xargs; \
+ od -An -tu2 -v /tmp/nu021k.bin | awk '{print "NU021K_WORD_PART", NR, $0}'; \
  echo NU021K_WORDS_END; \
  LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/nu021k_probe /tmp/nu021k.bin 0
 CMD ["/bin/sh","-c","echo NU021K_REFERENCE_ONLY; exit 0"]
