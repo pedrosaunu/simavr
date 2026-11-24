@@ -13,7 +13,7 @@
 #define MAX_STEPS 160
 #define FIELD_BYTES 22
 
-static int run(const char *file,int offset,int preflight,uint64_t reference_tov){
+static int run(const char *file,int offset,int preflight,uint64_t reference_tov,uint64_t *out_tov){
   uint8_t img[32768]={0};
   FILE *f=fopen(file,"rb");if(!f)return 2;
   size_t bytes=fread(img,1,sizeof(img),f);fclose(f);
@@ -90,6 +90,7 @@ static int run(const char *file,int offset,int preflight,uint64_t reference_tov)
       (unsigned long long)compa_cycle,
       (unsigned long long)tov_cycle,
       (unsigned long long)compb_cycle,good);
+    if(out_tov)*out_tov=tov_cycle;
     avr_terminate(a);return good?0:1;
   }
   if(!done){ /* Still export exactly what was observed; never false-green. */
@@ -122,11 +123,12 @@ static int run(const char *file,int offset,int preflight,uint64_t reference_tov)
 int main(int argc,char**argv){
   if(argc!=3)return 2;
   const char *file=argv[1];
-  uint64_t tov=(uint64_t)strtoull(argv[2],NULL,0);
-  if(run(file,0,1,0))return 1;
+  if(strcmp(argv[2],"0"))return 2;
+  uint64_t tov=0;
+  if(run(file,0,1,0,&tov))return 1;
   int failures=0;
   for(int off=-3;off<=3;off++){
-    if(run(file,off,0,tov))failures++;
+    if(run(file,off,0,tov,NULL))failures++;
   }
   printf("NU021K_CAMPAIGN_SUMMARY cases=7 failures=%d\n",failures);
   return failures?1:0;
