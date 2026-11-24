@@ -1,0 +1,21 @@
+# NU-021K: 7 external PB0 edges across actual guest CPU-visible Timer1 overflow.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN set -eux; \
+ make -C simavr RELEASE=1 all; \
+ cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim \
+   tests/weightos_nu021k_boundary_probe.c \
+   -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/nu021k_probe; \
+ avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start \
+   -x assembler-with-cpp tests/weightos_nu021k_boundary.S \
+   -o /tmp/nu021k.elf; \
+ avr-objcopy -O binary -j .text /tmp/nu021k.elf /tmp/nu021k.bin; \
+ sha256sum /tmp/nu021k.bin; \
+ echo NU021K_WORDS_BEGIN; \
+ od -An -tu2 -v /tmp/nu021k.bin | xargs; \
+ echo NU021K_WORDS_END; \
+ LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/nu021k_probe /tmp/nu021k.bin 0
+CMD ["/bin/sh","-c","echo NU021K_REFERENCE_ONLY; exit 0"]
