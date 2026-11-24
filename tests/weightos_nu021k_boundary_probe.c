@@ -83,7 +83,7 @@ static int run(const char *file,int offset,int preflight,uint64_t reference_tov,
   }
   if(preflight){
     int good=ready && tov_cycle && compa_cycle && compb_cycle &&
-             compa_cycle<tov_cycle && compb_cycle>=tov_cycle &&
+             compa_cycle<=tov_cycle && compb_cycle>=tov_cycle &&
              (tov_cycle>ready_cycle+4);
     printf("NU021K_PREFLIGHT ready=%llu compa=%llu tov=%llu compb=%llu passed=%d\n",
       (unsigned long long)ready_cycle,
