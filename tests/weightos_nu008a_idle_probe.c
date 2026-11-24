@@ -1,9 +1,17 @@
 #include "sim_avr.h"
+#include "sim_interrupts.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 static unsigned word(uint8_t*p,unsigned i){return p[i]+256U*p[i+1];}
-static void no_wall_sleep(avr_t *a, avr_cycle_count_t d){(void)a;(void)d;}
+static void no_wall_sleep(avr_t *a, avr_cycle_count_t d){
+ printf("NU008A_WAIT round=%u from=%llu requested=%llu next_due=%llu\n",a->data[0x100],(unsigned long long)a->cycle,(unsigned long long)d,(unsigned long long)(a->cycle+d));
+}
+static void pending(avr_irq_t *irq,uint32_t value,void *param){
+ (void)irq;avr_t*a=param;
+ if(value&&a->state==cpu_Sleeping)
+  printf("NU008A_PENDING round=%u cycle=%llu flags=%u mask=%u\n",a->data[0x100],(unsigned long long)a->cycle,a->data[0x36],a->data[0x6f]);
+}
 int main(int argc,char**argv){
  if(argc!=2)return 2;
  uint8_t image[32768]={0};FILE*f=fopen(argv[1],"rb");if(!f)return 2;
@@ -11,6 +19,7 @@ int main(int argc,char**argv){
  if(!n||n>=sizeof image||(n&1))return 2;
  avr_t*a=avr_make_mcu_by_name("atmega328p");if(!a||avr_init(a))return 3;
  a->frequency=16000000;a->sleep=no_wall_sleep;avr_loadcode(a,image,(uint32_t)n,0);
+ for(unsigned v=11;v<=13;v++){avr_irq_t*q=avr_get_interrupt_irq(a,v);if(!q)return 3;avr_irq_register_notify(q+AVR_INT_IRQ_PENDING,pending,a);}
  uint16_t rows[500][21]={{0}};
  unsigned steps=0,entries=0,sleeps=0,errors=0,done=0,last_round=0;
  for(unsigned i=1;i<=500;i++){
