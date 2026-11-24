@@ -69,7 +69,8 @@ wait:
  cp r24,r28
  brne wait
  cpi r28,3
- brne round
+ breq done
+ rjmp round
 done:
  nop
  rjmp done
