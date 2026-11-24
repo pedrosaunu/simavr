@@ -19,6 +19,9 @@ start:
  .rept 6
  nop
  .endr
+ lds r20,0x84
+ lds r21,0x85
+ in r22,0x16
  ldi r16,0
  sts 0x81,r16
  sts 0x85,r16
@@ -30,11 +33,17 @@ start:
  .rept 12
  nop
  .endr
+ lds r20,0x84
+ lds r21,0x85
+ in r22,0x16
  ldi r16,1
  sts 0x81,r16
  .rept 6
  nop
  .endr
+ lds r20,0x84
+ lds r21,0x85
+ in r22,0x16
  ldi r16,24
  sts 0x81,r16
  ldi r16,0
@@ -49,6 +58,9 @@ start:
  .rept 12
  nop
  .endr
+ lds r20,0x84
+ lds r21,0x85
+ in r22,0x16
  ldi r16,0
  sts 0x81,r16
  ldi r25,0x5a
