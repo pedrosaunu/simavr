@@ -20,7 +20,12 @@ def generate(root):
         def pair(addr,v):
             write("sts",addr+1,v>>8);write("sts",addr,v&255)
         write("out",4,6);write("out",5,2)
-        pair(0x86,c["top"]);pair(0x88,c["oa"]);pair(0x8a,c["ob"]);pair(0x84,c["count"])
+        if c["mode"]==14:
+            write("sts",0x81,24)  # stopped WGM12: ICR1 write enabled
+        pair(0x86,c["top"])
+        if c["mode"]==14:
+            lines.extend([" lds r21,0x86"," lds r22,0x87"])
+        pair(0x88,c["oa"]);pair(0x8a,c["ob"]);pair(0x84,c["count"])
         write("sts",0x81,(c["mode"]&12)<<1)
         write("sts",0x80,(c["mode"]&3)|c["com"])
         lines.append(" ldi r24,1")
