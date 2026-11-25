@@ -29,6 +29,7 @@
 #include <math.h>
 
 #include "avr_timer.h"
+#include "avr_timer_output.h"
 #include "avr_ioport.h"
 #include "sim_time.h"
 
@@ -71,51 +72,6 @@ _timer_get_icr(
 	return p->io.avr->data[p->r_icr] |
 				(p->r_tcnth ? (p->io.avr->data[p->r_icrh] << 8) : 0);
 }
-/* Only ATmega328P Timer1 WGM14 COM=2/3, PB1/2. Other profiles retain
- * their existing IRQ wiring. COM changes are independent of CS. */
-static void
-nu016h_sync_outputs(avr_timer_t *p)
-{
-    avr_t *avr=p->io.avr;
-    if (p->name!='1' || (strcmp(avr->mmcu,"atmega328p")!=0 && strcmp(avr->mmcu,"atmega328")!=0))
-        return;
-    uint8_t mode=avr_regbit_get_array(avr,p->wgm,ARRAY_SIZE(p->wgm));
-    for (unsigned ch=0;ch<2;ch++) {
-        avr_regbit_t bit=p->comp[ch].com_pin;
-        uint8_t mask=1u<<ch;
-        uint8_t com=avr_regbit_get(avr,p->comp[ch].com);
-        int enabled=mode==14 && (com==2 || com==3);
-        if (enabled==!!(p->nu016h_override&mask)) continue;
-        avr_ioport_getirq_t req={.bit=bit};
-        if (avr_ioctl(avr,AVR_IOCTL_IOPORT_GETIRQ_REGBIT,&req)<=0) continue;
-        avr_irq_t *src=p->io.irq+TIMER_IRQ_OUT_COMP+ch;
-        avr_ioport_override_t change={.bit=bit,.enabled=enabled,
-            .value=!!(p->nu016h_level&mask)};
-        if (avr_ioctl(avr,AVR_IOCTL_IOPORT_SET_OVERRIDE,&change)<0) continue;
-        if (enabled) {
-            avr_unconnect_irq(src,req.irq[0]);
-            p->nu016h_override|=mask;
-        } else {
-            avr_connect_irq(src,req.irq[0]);
-            p->nu016h_override&=~mask;
-        }
-    }
-}
-
-static void
-nu016h_emit(avr_timer_t *p,unsigned ch,avr_irq_t *irq,uint32_t value)
-{
-    uint8_t mask=1u<<ch;
-    if (p->nu016h_override&mask) {
-        if (value&1) p->nu016h_level|=mask;
-        else p->nu016h_level&=~mask;
-        avr_ioport_override_t change={.bit=p->comp[ch].com_pin,.enabled=1,
-            .value=!!(value&1)};
-        avr_ioctl(p->io.avr,AVR_IOCTL_IOPORT_SET_OVERRIDE,&change);
-    }
-    avr_raise_irq(irq,value);
-}
-
 static avr_cycle_count_t
 avr_timer_comp(
 		avr_timer_t *p,
@@ -176,10 +132,10 @@ avr_timer_comp(
 						p->io.irq[TIMER_IRQ_OUT_COMP + comp].value ? 0 : 1);
 			break;
 		case avr_timer_com_clear:
-			nu016h_emit(p,comp,irq,flags | 0);
+			avr_timer_output_emit(p,comp,irq,flags | 0);
 			break;
 		case avr_timer_com_set:
-			nu016h_emit(p,comp,irq,flags | 1);
+			avr_timer_output_emit(p,comp,irq,flags | 1);
 			break;
 	}
 
@@ -215,10 +171,10 @@ avr_timer_comp_on_tov(
 		case avr_timer_com_toggle: // toggle on compare match => on tov do nothing
 			break;
 		case avr_timer_com_clear: // clear on compare match => set on tov
-			nu016h_emit(p,comp,irq,1 | flags);
+			avr_timer_output_emit(p,comp,irq,1 | flags);
 			break;
 		case avr_timer_com_set: // set on compare match => clear on tov
-			nu016h_emit(p,comp,irq,0 | flags);
+			avr_timer_output_emit(p,comp,irq,0 | flags);
 			break;
 	}
 }
@@ -947,7 +903,7 @@ avr_timer_write(
 	uint8_t new_as2 = avr_regbit_get(avr, p->as2);
 	uint8_t new_cs = avr_regbit_get_array(avr, p->cs, ARRAY_SIZE(p->cs));
 	uint8_t new_mode = avr_regbit_get_array(avr, p->wgm, ARRAY_SIZE(p->wgm));
-    nu016h_sync_outputs(p);
+    avr_timer_output_sync(p);
 
 	// only reconfigure the timer if "relevant" bits have changed
 	// this prevent the timer reset when changing the edge detector
