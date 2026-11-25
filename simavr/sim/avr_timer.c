@@ -967,8 +967,9 @@ avr_timer_write_ocr(
      * can be stale when CS=0, so decode the guest register instead. */
     if (avr_timer_pwm_latch_profile(timer) && timer->nu016ka_valid &&
             avr_timer_pwm_mode(avr_regbit_get_array(avr,timer->wgm,ARRAY_SIZE(timer->wgm))) &&
-            avr_regbit_get_array(avr,timer->cs,ARRAY_SIZE(timer->cs))==0)
+            avr_regbit_get_array(avr,timer->cs,ARRAY_SIZE(timer->cs))==0) {
         return;
+    }
 
 	switch (timer->wgm_op_mode_kind) {
 		case avr_timer_wgm_normal:
