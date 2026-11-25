@@ -25,6 +25,7 @@
 #include <ctype.h>
 #include "sim_avr.h"
 #include "sim_core.h"
+#include "sim_cycle_timers.h"
 #include "sim_gdb.h"
 #include "avr_flash.h"
 #include "avr_watchdog.h"
@@ -1310,8 +1311,30 @@ run_one_again:
 								avr->cycle += cycle;
 								_avr_set_ram(avr, x, vd);
 								avr->cycle -= cycle;
-							} else {
-								_avr_set_ram(avr, x, vd);
+							} else if (!strcmp(avr->mmcu,"atmega328") &&
+                                    (avr->data[0x80]&3)==2 &&
+                                    (avr->data[0x81]&0x1f)==0x19 &&
+                                    ((x==0x81 && (vd&0x1f)==0x18) || x==0x8a)) {
+                                /* Diagnostic experiment only. Same opcode and ROM;
+                                 * independently vary when due events precede the store.
+                                 * No clock-enable change and no general CPU bus claim. */
+                                const char *env=getenv("NU016_BUS_PHASE");
+                                unsigned phase=env ? (unsigned)atoi(env) : 0;
+                                if (phase>2) abort();
+                                avr_cycle_count_t before=avr->cycle;
+                                unsigned saved_run_count=avr->run_cycle_count;
+                                for (unsigned k=1;k<=phase;k++) {
+                                    avr->cycle=before+k;
+                                    avr_cycle_timer_process(avr);
+                                }
+                                fprintf(stderr,"NU016BUS WRITE phase=%u addr=%u entry=%llu commit=%llu retirement=%llu\n",
+                                    phase,(unsigned)x,(unsigned long long)before,
+                                    (unsigned long long)avr->cycle,(unsigned long long)(before+cycle));
+                                _avr_set_ram(avr,x,vd);
+                                avr->cycle=before;
+                                avr->run_cycle_count=saved_run_count;
+                            } else {
+                                _avr_set_ram(avr, x, vd);
 							}
 						}	break;
 						case 0x9001:
