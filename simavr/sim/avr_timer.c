@@ -438,6 +438,43 @@ avr_timer_tov(
         }
     }
 	p->tov_base = when;
+    /* Complete old-period compares before installing the new buffered values.
+     * In particular WGM15 OCRA==old TOP must compare using the OLD period.
+     * Only a real armed internal /1 rollover transfers pending OCRs. */
+    if (!start && p->nu016j_armed && avr_timer_fast_pwm_output_profile(p)) {
+        static const avr_cycle_timer_t dispatch[AVR_TIMER_COMP_COUNT] =
+            { avr_timer_compa, avr_timer_compb, avr_timer_compc };
+        uint64_t old_period=p->tov_cycles;
+        for (unsigned ch=0;ch<AVR_TIMER_COMP_COUNT;ch++)
+            if (p->comp[ch].comp_cycles==old_period)
+                dispatch[ch](avr,when,p);
+        uint16_t new_top=p->mode.top==avr_timer_wgm_reg_ocra ?
+            _timer_get_ocr(p,0) : p->tov_top;
+        uint64_t old_a=p->comp[0].comp_cycles,old_b=p->comp[1].comp_cycles;
+        p->tov_top=new_top;
+        p->tov_cycles=(uint64_t)new_top+1;
+        for (unsigned ch=0;ch<AVR_TIMER_COMP_COUNT;ch++) {
+            if (!p->comp[ch].r_ocr) continue;
+            uint16_t ocr=_timer_get_ocr(p,ch);
+            p->comp[ch].comp_cycles=ocr<=new_top ? (uint64_t)ocr+1 : 0;
+            avr_timer_comp_on_tov(p,when,ch);
+        }
+        if (old_period!=p->tov_cycles || old_a!=p->comp[0].comp_cycles ||
+                old_b!=p->comp[1].comp_cycles)
+            fprintf(stderr,"NU016K TRANSFER when=%llu old_period=%llu new_period=%llu a=%llu b=%llu\n",
+                (unsigned long long)when,(unsigned long long)old_period,
+                (unsigned long long)p->tov_cycles,(unsigned long long)p->comp[0].comp_cycles,
+                (unsigned long long)p->comp[1].comp_cycles);
+        for (unsigned ch=0;ch<AVR_TIMER_COMP_COUNT;ch++) {
+            uint64_t offset=p->comp[ch].comp_cycles;
+            if (!offset || offset>=p->tov_cycles) continue;
+            if (when+offset<=avr->cycle)
+                dispatch[ch](avr,when+offset,p);
+            else
+                avr_cycle_timer_register(avr,when+offset-avr->cycle,dispatch[ch],p);
+        }
+        return next+p->tov_cycles;
+    }
     /* Only on the real periodic TOP→BOTTOM callback, not configuration.
      * All old compare offsets are below period length, so neither has
      * a compare coincident with this boundary. */
@@ -927,7 +964,9 @@ avr_timer_write_ocr(
             if (timer->name == '1') {
                 fprintf(stderr,"NU016B WRITE cpu=%llu addr=%u old=%u new=%u base=%llu\n",(unsigned long long)avr->cycle,(unsigned)addr,(unsigned)oldv,(unsigned)_timer_get_comp_ocr(avr, comp),(unsigned long long)timer->tov_base);
             }
-			if (oldv != _timer_get_comp_ocr(avr, comp) && !nu016g_buffered_profile(timer))
+			if (oldv != _timer_get_comp_ocr(avr, comp) &&
+                !(timer->nu016j_armed && avr_timer_fast_pwm_output_profile(timer)) &&
+                !nu016g_buffered_profile(timer))
 				avr_timer_reconfigure(timer, 0);
 			avr_raise_irq(timer->io.irq + TIMER_IRQ_OUT_PWM0,
 					_timer_get_ocr(timer, AVR_TIMER_COMPA));
