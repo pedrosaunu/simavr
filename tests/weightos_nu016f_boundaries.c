@@ -15,8 +15,9 @@ int main(int argc,char**argv){
  for(unsigned i=0;i<180;i++){
   a->run_cycle_limit=1;a->run_cycle_count=1;int rc=avr_run(a);
   avr_ioport_state_t port={0};if(avr_ioctl(a,AVR_IOCTL_IOPORT_GETSTATE('B'),&port)<0)return 3;
-  printf("NU016F ROW %u,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
-   i+1,(unsigned long long)a->cycle,a->pc/2,a->data[24],a->data[0x80],a->data[0x81],word(a->data,0x88),word(a->data,0x8a),a->data[0x36],port.port&6,port.pin&6,a->data[23]&6,a->data[20]&6,word(a->data,21),a->data[25],port.ddr&6);
+  uint8_t drive=0;if(avr_ioctl(a,AVR_IOCTL_IOPORT_GETDRIVE('B'),&drive)<0)return 3;
+  printf("NU016F ROW %u,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+   i+1,(unsigned long long)a->cycle,a->pc/2,a->data[24],a->data[0x80],a->data[0x81],word(a->data,0x88),word(a->data,0x8a),a->data[0x36],port.port&6,port.pin&6,a->data[23]&6,a->data[20]&6,word(a->data,21),a->data[25],port.ddr&6,drive&6);
   if(a->data[25]==90){puts("NU016F PASS");avr_terminate(a);return 0;}
   if(rc!=cpu_Running)return 4;
  }

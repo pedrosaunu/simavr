@@ -190,6 +190,7 @@ typedef struct avr_timer_t {
      * internal Timer1 rescheduling from an actual CPU TCNT1 write. */
     uint8_t         tcnt_compare_block_pending;
     uint8_t         tcnt_internal_reschedule;
+    uint8_t         nu016h_override, nu016h_level; /* Timer1 OC state */
 
 	avr_regbit_t	wgm[4];
 	avr_timer_wgm_t	wgm_op[16];

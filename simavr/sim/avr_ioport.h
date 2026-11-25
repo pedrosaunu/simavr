@@ -55,6 +55,15 @@ typedef struct avr_ioport_getirq_t {
 
 #define AVR_IOCTL_IOPORT_GETIRQ_REGBIT AVR_IOCTL_DEF('i','o','g','r')
 
+/* NU-016H experimental alternate-output mux. The caller owns the selected
+ * bit; input direction and the software PORT latch remain independent. */
+typedef struct avr_ioport_override_t {
+    avr_regbit_t bit;
+    uint8_t enabled, value;
+} avr_ioport_override_t;
+#define AVR_IOCTL_IOPORT_SET_OVERRIDE AVR_IOCTL_DEF('i','o','v','r')
+#define AVR_IOCTL_IOPORT_GETDRIVE(_name) AVR_IOCTL_DEF('i','o','d',(_name))
+
 /*
  * ioctl used to get a port state.
  *
@@ -115,6 +124,7 @@ typedef struct avr_ioport_t {
 	int8_t 		shift;
 
 	uint8_t 	irqing;		// Suppress chatter during IRQ generation.
+    uint8_t override_mask, override_value; /* peripheral output mux */
 
 	// This represent the default IRQ value when
 	// the port is set as input.

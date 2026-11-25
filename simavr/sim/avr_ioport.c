@@ -56,6 +56,13 @@ avr_ioport_flag_bit_write(
 }
 
 static uint8_t
+avr_ioport_drive(avr_ioport_t *p)
+{
+    return (p->io.avr->data[p->r_port] & ~p->override_mask) |
+           (p->override_value & p->override_mask);
+}
+
+static uint8_t
 avr_ioport_read(
 		struct avr_t * avr,
 		avr_io_addr_t addr,
@@ -63,7 +70,7 @@ avr_ioport_read(
 {
 	avr_ioport_t * p = (avr_ioport_t *)param;
 	uint8_t ddr = avr->data[p->r_ddr];
-	uint8_t v = (avr->data[p->r_pin] & ~ddr) | (avr->data[p->r_port] & ddr);
+	uint8_t v = (avr->data[p->r_pin] & ~ddr) | (avr_ioport_drive(p) & ddr);
 
 	avr->data[addr] = v;
 	avr_raise_irq(p->io.irq + IOPORT_IRQ_REG_PIN, v);
@@ -88,7 +95,7 @@ avr_ioport_update_irqs(
 
 	for (int i = 0; i < 8; i++) {
 		if (ddr & (1 << i))
-			avr_raise_irq(p->io.irq + i, (avr->data[p->r_port] >> i) & 1);
+			avr_raise_irq(p->io.irq + i, (avr_ioport_drive(p) >> i) & 1);
 		else if (!avr->options.no_pullups) {
 			if (p->external.pull_mask & (1 << i))
 				avr_raise_irq(p->io.irq + i,
@@ -99,7 +106,7 @@ avr_ioport_update_irqs(
 			}
 		}
 	}
-	uint8_t pin = (avr->data[p->r_pin] & ~ddr) | (avr->data[p->r_port] & ddr);
+	uint8_t pin = (avr->data[p->r_pin] & ~ddr) | (avr_ioport_drive(p) & ddr);
 	pin = (pin & ~p->external.pull_mask) | p->external.pull_value;
 	avr_raise_irq(p->io.irq + IOPORT_IRQ_PIN_ALL, pin);
 }
@@ -196,7 +203,7 @@ avr_ioport_irq_notify(
 	if (value && irq->irq != IOPORT_IRQ_PIN_ALL_IN)
 		value = mask;
 	new_pin = (avr->data[p->r_pin] & ~mask) | (value & mask);
-	new_pin = (avr->data[p->r_port] & ddr) | (new_pin & ~ddr);
+	new_pin = (avr_ioport_drive(p) & ddr) | (new_pin & ~ddr);
 	old_value = irq->value;
 
 	if (output) {
@@ -271,6 +278,7 @@ avr_ioport_reset(
 {
 	avr_ioport_t * p = (avr_ioport_t *)port;
 
+    p->override_mask = p->override_value = 0;
 	if (p->io.irq) { // PORTA is dummy in atmega8
 		for (int i = 0; i < IOPORT_IRQ_PIN_ALL; i++)
 			avr_irq_register_notify(p->io.irq + i, avr_ioport_irq_notify, p);
@@ -294,6 +302,29 @@ avr_ioport_ioctl(
 		return -1;
 
 	switch(ctl) {
+        case AVR_IOCTL_IOPORT_SET_OVERRIDE: {
+            avr_ioport_override_t *r = (avr_ioport_override_t*)io_param;
+            if (r->bit.reg != p->r_port && r->bit.reg != p->r_pin &&
+                    r->bit.reg != p->r_ddr)
+                break;
+            if (r->bit.mask != 1 || r->bit.bit >= 8)
+                break;
+            uint8_t mask = 1u << r->bit.bit;
+            uint8_t old_drive = avr_ioport_drive(p);
+            if (r->enabled) p->override_mask |= mask;
+            else p->override_mask &= ~mask;
+            if (r->value) p->override_value |= mask;
+            else p->override_value &= ~mask;
+            uint8_t drive = avr_ioport_drive(p);
+            if ((avr->data[p->r_ddr] & mask) && ((old_drive ^ drive) & mask)) {
+                avr_raise_irq(p->io.irq + r->bit.bit, !!(drive & mask));
+                uint8_t ddr = avr->data[p->r_ddr];
+                uint8_t pin = (avr->data[p->r_pin] & ~ddr) | (drive & ddr);
+                avr_raise_irq(p->io.irq + IOPORT_IRQ_PIN_ALL, pin);
+            }
+            res = 0;
+            break;
+        }
 		case AVR_IOCTL_IOPORT_GETIRQ_REGBIT: {
 			avr_ioport_getirq_t * r = (avr_ioport_getirq_t*)io_param;
 
@@ -314,6 +345,10 @@ avr_ioport_ioctl(
 			}
 		}	break;
 		default: {
+            if (ctl == AVR_IOCTL_IOPORT_GETDRIVE(p->name)) {
+                *(uint8_t*)io_param = avr_ioport_drive(p) & avr->data[p->r_ddr];
+                return 0;
+            }
 			/*
 			 * Return the port state if the IOCTL matches us.
 			 */
