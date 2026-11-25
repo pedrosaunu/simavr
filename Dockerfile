@@ -3,6 +3,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 COPY . .
-RUN make -C simavr RELEASE=1 all && cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim tests/weightos_nu016b_pwm_probe.c -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/probe
-RUN set -eux; for pair in 1:1 2:2 2:1; do a=${pair%:*}; b=${pair#*:}; echo "NU016B CASE $pair"; avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -DINITIAL_B=$a -DFINAL_B=$b -x assembler-with-cpp tests/weightos_nu016b_pwm.S -o /tmp/pwm.elf; avr-objcopy -O binary -j .text /tmp/pwm.elf /tmp/pwm.bin; sha256sum /tmp/pwm.bin; LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/pwm.bin; done
+RUN make -C simavr RELEASE=1 all && cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim tests/weightos_nu016f_boundaries.c -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/probe
+RUN set -eux; for phase in 0 2 4; do echo "NU016F CASE $phase"; avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -DPHASE=$phase -x assembler-with-cpp tests/weightos_nu016f_boundaries.S -o /tmp/pwm.elf; avr-objcopy -O binary -j .text /tmp/pwm.elf /tmp/pwm.bin; sha256sum /tmp/pwm.bin; LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/pwm.bin; done
 CMD ["/bin/sh","-c","exit 0"]
