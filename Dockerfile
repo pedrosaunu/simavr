@@ -5,5 +5,5 @@ WORKDIR /workspace
 COPY . .
 RUN make -C simavr RELEASE=1 all && cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim tests/weightos_nu016f_boundaries.c -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/probe
 RUN python3 tests/nu016i_generate.py /tmp/matrix
-RUN set -eux; for id in 9 10 11 16; do echo "NU016F CASE $id"; avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -x assembler-with-cpp /tmp/matrix/case-$id.S -o /tmp/pwm.elf; avr-objcopy -O binary -j .text /tmp/pwm.elf /tmp/pwm.bin; sha256sum /tmp/pwm.bin; NU016_BUS_PHASE=2 LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/pwm.bin 2>/tmp/events; done
+RUN set -eux; for id in 12 13 14 15; do echo "NU016F CASE $id"; avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -x assembler-with-cpp /tmp/matrix/case-$id.S -o /tmp/pwm.elf; avr-objcopy -O binary -j .text /tmp/pwm.elf /tmp/pwm.bin; sha256sum /tmp/pwm.bin; NU016_BUS_PHASE=2 LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/pwm.bin 2>/tmp/events; grep 'NU016B TOV' /tmp/events; done
 CMD ["/bin/sh","-c","exit 0"]

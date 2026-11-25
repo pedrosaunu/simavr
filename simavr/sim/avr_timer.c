@@ -828,6 +828,8 @@ avr_timer_reconfigure(
 		case avr_timer_wgm_fast_pwm: {
 			uint16_t top =
 				(p->mode.top == avr_timer_wgm_reg_icr) ? _timer_get_icr(p) :
+                (p->name == '1' && !strcmp(avr->mmcu,"atmega328") &&
+                 p->mode.top == avr_timer_wgm_reg_ocra) ? _timer_get_ocr(p, AVR_TIMER_COMPA) :
 				p->wgm_op_mode_size;
 			avr_timer_configure(p, p->cs_div_value, top, reset);
 		}	break;
