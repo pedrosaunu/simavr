@@ -390,8 +390,15 @@ avr_timer_tov(
                 avr_raise_interrupt(avr, &p->overflow);
             if (p->mode.top == avr_timer_wgm_reg_icr)
                 avr_raise_interrupt(avr, &p->icr);
-        } else
+        } else {
             avr_raise_interrupt(avr, &p->overflow);
+            /* NU-016D bounded candidate: WGM14 internal /1 ICR TOP
+             * raises ICF1 together with TOV1 (7810D 15.9.3). */
+            if (p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
+                    p->mode.top == avr_timer_wgm_reg_icr && p->cs_div_value == 1) {
+                avr_raise_interrupt(avr, &p->icr);
+            }
+        }
     }
 	p->tov_base = when;
 
@@ -406,8 +413,14 @@ avr_timer_tov(
                  * Arm one BOTTOM callback for the whole pair of OC pins,
                  * but leave compare A/B scheduling on its original clock.
                  */
+                /* NU-016D bounded internal /1 WGM14 candidate:
+                 * overflow callback updates tov_base to the new period,
+                 * i.e. BOTTOM in _avr_timer_get_current_tcnt().
+                 * Microchip 3.4.1 specifies OC action on TOP→BOTTOM,
+                 * not one additional cycle later. Other profiles stay unchanged. */
                 if (p->wgm_op_mode_kind != avr_timer_wgm_fast_pwm ||
-                        p->mode.top != avr_timer_wgm_reg_icr)
+                        p->mode.top != avr_timer_wgm_reg_icr ||
+                        (p->name == '1' && p->cs_div_value == 1))
                     avr_timer_comp_on_tov(p, when, compi);
                 else if (compi == 0 && !start)
                     avr_cycle_timer_register(avr, 1, avr_timer_wgm14_bottom, p);
