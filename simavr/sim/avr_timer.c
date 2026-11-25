@@ -349,6 +349,24 @@ avr_timer_wgm14_bottom(
     return 0;
 }
 
+/* NU-016G bounded candidate: internal WGM14 /1, both compare values
+ * strictly below ICR TOP, active offsets valid in the current period.
+ * comp_cycles is the active compare state; visible OCR is the pending
+ * register. Extrema, mode changes, stopped writes and variable TOP
+ * changes are explicitly outside this candidate. */
+static int
+nu016g_buffered_profile(avr_timer_t *p)
+{
+    return p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
+        p->mode.top == avr_timer_wgm_reg_icr && p->cs_div_value == 1 &&
+        !(p->ext_clock_flags & (AVR_TIMER_EXTCLK_FLAG_TN | AVR_TIMER_EXTCLK_FLAG_AS2)) &&
+        p->tov_top > 1 && p->tov_cycles == (uint64_t)p->tov_top + 1 &&
+        p->comp[0].comp_cycles > 1 && p->comp[0].comp_cycles < p->tov_cycles &&
+        p->comp[1].comp_cycles > 1 && p->comp[1].comp_cycles < p->tov_cycles &&
+        _timer_get_ocr(p,0) > 0 && _timer_get_ocr(p,0) < p->tov_top &&
+        _timer_get_ocr(p,1) > 0 && _timer_get_ocr(p,1) < p->tov_top;
+}
+
 static avr_cycle_count_t
 avr_timer_tov(
 		struct avr_t * avr,
@@ -401,6 +419,19 @@ avr_timer_tov(
         }
     }
 	p->tov_base = when;
+    /* Only on the real periodic TOP→BOTTOM callback, not configuration.
+     * All old compare offsets are below period length, so neither has
+     * a compare coincident with this boundary. */
+    if (!start && nu016g_buffered_profile(p)) {
+        uint64_t old_a=p->comp[0].comp_cycles, old_b=p->comp[1].comp_cycles;
+        p->comp[0].comp_cycles=(uint64_t)_timer_get_ocr(p,0)+1;
+        p->comp[1].comp_cycles=(uint64_t)_timer_get_ocr(p,1)+1;
+        if (old_a!=p->comp[0].comp_cycles || old_b!=p->comp[1].comp_cycles) {
+            fprintf(stderr,"NU016G TRANSFER when=%llu cpu=%llu a=%llu b=%llu\n",
+                (unsigned long long)when,(unsigned long long)avr->cycle,
+                (unsigned long long)p->comp[0].comp_cycles,(unsigned long long)p->comp[1].comp_cycles);
+        }
+    }
 
 	static const avr_cycle_timer_t dispatch[AVR_TIMER_COMP_COUNT] =
 		{ avr_timer_compa, avr_timer_compb, avr_timer_compc };
@@ -835,7 +866,7 @@ avr_timer_write_ocr(
             if (timer->name == '1') {
                 fprintf(stderr,"NU016B WRITE cpu=%llu addr=%u old=%u new=%u base=%llu\n",(unsigned long long)avr->cycle,(unsigned)addr,(unsigned)oldv,(unsigned)_timer_get_comp_ocr(avr, comp),(unsigned long long)timer->tov_base);
             }
-			if (oldv != _timer_get_comp_ocr(avr, comp))
+			if (oldv != _timer_get_comp_ocr(avr, comp) && !nu016g_buffered_profile(timer))
 				avr_timer_reconfigure(timer, 0);
 			avr_raise_irq(timer->io.irq + TIMER_IRQ_OUT_PWM0,
 					_timer_get_ocr(timer, AVR_TIMER_COMPA));
