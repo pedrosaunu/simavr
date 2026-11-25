@@ -4,5 +4,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 WORKDIR /workspace
 COPY . .
 RUN make -C simavr RELEASE=1 all && cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim tests/weightos_nu016f_boundaries.c -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/probe
-RUN set -eux; for phase in 0 2 4; do echo "NU016F CASE $phase"; avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -DPHASE=$phase -x assembler-with-cpp tests/weightos_nu016f_boundaries.S -o /tmp/pwm.elf; avr-objcopy -O binary -j .text /tmp/pwm.elf /tmp/pwm.bin; sha256sum /tmp/pwm.bin; LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/pwm.bin 2>/tmp/events; grep -E 'NU016B (WRITE|RECONFIG)|NU016G TRANSFER' /tmp/events; done
+RUN set -eux; for phase in 8; do echo "NU016F CASE $phase"; avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -DPHASE=0 -x assembler-with-cpp tests/weightos_nu016h_mux_controls.S -o /tmp/pwm.elf; avr-objcopy -O binary -j .text /tmp/pwm.elf /tmp/pwm.bin; sha256sum /tmp/pwm.bin; LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/pwm.bin 2>/tmp/events; grep -E 'NU016B (WRITE|RECONFIG)|NU016G TRANSFER' /tmp/events; done
 CMD ["/bin/sh","-c","exit 0"]
