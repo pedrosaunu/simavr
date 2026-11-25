@@ -77,7 +77,7 @@ static void
 nu016h_sync_outputs(avr_timer_t *p)
 {
     avr_t *avr=p->io.avr;
-    if (p->name!='1' || strcmp(avr->mmcu,"atmega328p")!=0)
+    if (p->name!='1' || (strcmp(avr->mmcu,"atmega328p")!=0 && strcmp(avr->mmcu,"atmega328")!=0))
         return;
     uint8_t mode=avr_regbit_get_array(avr,p->wgm,ARRAY_SIZE(p->wgm));
     for (unsigned ch=0;ch<2;ch++) {
