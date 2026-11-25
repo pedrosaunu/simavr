@@ -375,7 +375,7 @@ avr_timer_tov(
 		void * param)
 {
 	avr_timer_t * p = (avr_timer_t *)param;
-	int start = p->tov_base == 0;
+	int start = p->tov_base == 0 && !p->nu016j_armed;
     if (p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm) {
         fprintf(stderr,"NU016B TOV when=%llu cpu=%llu start=%d top=%u a=%llu b=%llu flags=%02x\n",(unsigned long long)when,(unsigned long long)avr->cycle,start,(unsigned)p->tov_top,(unsigned long long)p->comp[0].comp_cycles,(unsigned long long)p->comp[1].comp_cycles,(unsigned)avr->data[0x36]);
     }
@@ -439,12 +439,6 @@ avr_timer_tov(
 
 	for (int compi = 0; compi < AVR_TIMER_COMP_COUNT; compi++) {
 		if (p->comp[compi].comp_cycles) {
-            /* Clock enable is schedule initialization, not a counter tick.
-             * On resume an offset at/before the retained count belongs
-             * to the elapsed part of the period. */
-            if (start && p->nu016f_start_schedule &&
-                    p->comp[compi].comp_cycles <= avr->cycle - when)
-                continue;
 			if (p->comp[compi].comp_cycles < p->tov_cycles && p->comp[compi].comp_cycles >= (avr->cycle - when)) {
                 /*
                  * Mode 14 uses the ICR1 TOP event one clock before BOTTOM.
@@ -456,9 +450,7 @@ avr_timer_tov(
                  * i.e. BOTTOM in _avr_timer_get_current_tcnt().
                  * Microchip 3.4.1 specifies OC action on TOP→BOTTOM,
                  * not one additional cycle later. Other profiles stay unchanged. */
-                if (start && p->nu016f_start_schedule) {
-                    /* Retain OC state until a genuine compare/BOTTOM. */
-                } else if (p->wgm_op_mode_kind != avr_timer_wgm_fast_pwm ||
+                if (p->wgm_op_mode_kind != avr_timer_wgm_fast_pwm ||
                         p->mode.top != avr_timer_wgm_reg_icr ||
                         (p->name == '1' && p->cs_div_value == 1))
                     avr_timer_comp_on_tov(p, when, compi);
@@ -475,6 +467,29 @@ avr_timer_tov(
 	}
 
 	return next + p->tov_cycles;
+}
+
+/* Arm a running internal /1 PWM period without emitting BOTTOM, flags,
+ * or compare actions for the elapsed portion. Unsigned cycle arithmetic
+ * supports a retained count larger than the current host cycle. */
+static void
+avr_timer_arm_retained_pwm(avr_timer_t *p, uint16_t count)
+{
+    avr_t *avr=p->io.avr;
+    static const avr_cycle_timer_t dispatch[AVR_TIMER_COMP_COUNT] =
+        { avr_timer_compa, avr_timer_compb, avr_timer_compc };
+    p->tov_base=avr->cycle-(avr_cycle_count_t)count;
+    p->nu016j_armed=1;
+    p->phase_accumulator=0.0f;
+    avr_cycle_timer_register(avr,p->tov_cycles-count,avr_timer_tov,p);
+    for (unsigned ch=0;ch<AVR_TIMER_COMP_COUNT;ch++) {
+        avr_cycle_count_t offset=p->comp[ch].comp_cycles;
+        if (offset>count && offset<p->tov_cycles)
+            avr_cycle_timer_register(avr,offset-count,dispatch[ch],p);
+    }
+    fprintf(stderr,"NU016J ARM cpu=%llu count=%u top=%u remaining=%llu\n",
+        (unsigned long long)avr->cycle,(unsigned)count,(unsigned)p->tov_top,
+        (unsigned long long)(p->tov_cycles-count));
 }
 
 static uint16_t
@@ -548,6 +563,7 @@ avr_timer_cancel_all_cycle_timers(
 		avr_timer_t *timer,
 		const uint8_t clear_timers)
 {
+	timer->nu016j_armed = 0;
 	if(clear_timers) {
 		for (int compi = 0; compi < AVR_TIMER_COMP_COUNT; compi++)
 			timer->comp[compi].comp_cycles = 0;
@@ -749,16 +765,14 @@ avr_timer_configure(
 				if (p->sync_prescaler && !use_ext_clock && prescaler > 1)
 					sync_phase = (avr->cycle - p->sync_epoch) % prescaler;
                 if (p->nu016f_start_schedule) {
-                    sync_phase = _timer_get_tcnt(p);
-                    fprintf(stderr,"NU016F RESUME cpu=%llu retained=%llu top=%u\n",
-                        (unsigned long long)avr->cycle,(unsigned long long)sync_phase,
-                        (unsigned)p->tov_top);
+                    avr_timer_arm_retained_pwm(p,_timer_get_tcnt(p));
+                } else {
+				    avr_cycle_timer_register(avr, p->tov_cycles - sync_phase, avr_timer_tov, p);
+				    // A zero base marks this as an initial configuration.
+				    p->tov_base = 0;
+				    avr_timer_tov(avr, avr->cycle - sync_phase, p);
+				    p->phase_accumulator = 0.0f;
                 }
-				avr_cycle_timer_register(avr, p->tov_cycles - sync_phase, avr_timer_tov, p);
-				// A zero base marks this as an initial configuration.
-				p->tov_base = 0;
-				avr_timer_tov(avr, avr->cycle - sync_phase, p);
-				p->phase_accumulator = 0.0f;
 			} else {
 				uint64_t orig_tov_base = p->tov_base;
 				avr_cycle_timer_register(avr, p->tov_cycles - (avr->cycle - orig_tov_base), avr_timer_tov, p);
@@ -981,15 +995,15 @@ avr_timer_write(
          */
         uint16_t kept = (uint16_t)avr->data[p->r_tcnt] |
                  (p->r_tcnth ? ((uint16_t)avr->data[p->r_tcnth] << 8) : 0);
-        /* Scope: synchronous /1, WGM14, both OC overrides active,
-         * interior OCR values, count not beyond TOP. No bus-phase fix.
-         * This deliberately does not qualify pending OCR across a stop. */
-        uint16_t top = _timer_get_icr(p);
-        p->nu016f_start_schedule = cs == 0 && new_cs == 1 && new_mode == 14 &&
-            p->name == '1' && p->nu016h_override == 3 && !p->sync_holding &&
-            kept <= top && top > 1 && kept <= avr->cycle &&
-            _timer_get_ocr(p,0) > 0 && _timer_get_ocr(p,0) < top &&
-            _timer_get_ocr(p,1) > 0 && _timer_get_ocr(p,1) < top;
+        /* Clock scheduling is independent of COM ownership and OCR duty.
+         * Keep the scope to synchronous /1, valid nonzero TOP and TCNT<=TOP.
+         * Pending buffered writes across stop and TOP=0 remain unqualified. */
+        uint16_t top = new_mode == 14 ? _timer_get_icr(p) :
+            new_mode == 15 ? _timer_get_ocr(p,0) : p->wgm_op_mode_size;
+        p->nu016f_start_schedule = cs == 0 && new_cs == 1 &&
+            p->name == '1' && !strcmp(avr->mmcu,"atmega328") &&
+            p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
+            !p->sync_holding && top>0 && kept<=top;
 		avr_timer_reconfigure(p, 1);
         p->nu016f_start_schedule = 0;
         if (cs == 0 && p->name == '1' &&
