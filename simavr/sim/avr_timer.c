@@ -109,8 +109,9 @@ avr_timer_comp(
 	   avr_raise_interrupt(avr, &p->comp[comp].interrupt);
 	}
 
-    if (p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm)
+    if (p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm) {
         fprintf(stderr,"NU016B COMP ch=%u when=%llu cpu=%llu base=%llu offset=%llu flags=%02x\n",(unsigned)comp,(unsigned long long)when,(unsigned long long)avr->cycle,(unsigned long long)p->tov_base,(unsigned long long)p->comp[comp].comp_cycles,(unsigned)avr->data[0x36]);
+    }
 	// check output compare mode and set/clear pins
 
 	if (p->comp[comp].com_pin.reg)	// we got a physical pin
@@ -333,8 +334,9 @@ avr_timer_wgm14_bottom(
         void *param)
 {
     avr_timer_t *p = (avr_timer_t *)param;
-    if (p->name == '1')
+    if (p->name == '1') {
         fprintf(stderr,"NU016B BOTTOM when=%llu cpu=%llu base=%llu\n",(unsigned long long)when,(unsigned long long)avr->cycle,(unsigned long long)p->tov_base);
+    }
     if (p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
             p->mode.top == avr_timer_wgm_reg_icr &&
             p->cs_div_value && p->tov_cycles) {
@@ -355,8 +357,9 @@ avr_timer_tov(
 {
 	avr_timer_t * p = (avr_timer_t *)param;
 	int start = p->tov_base == 0;
-    if (p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm)
+    if (p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm) {
         fprintf(stderr,"NU016B TOV when=%llu cpu=%llu start=%d top=%u a=%llu b=%llu flags=%02x\n",(unsigned long long)when,(unsigned long long)avr->cycle,start,(unsigned)p->tov_top,(unsigned long long)p->comp[0].comp_cycles,(unsigned long long)p->comp[1].comp_cycles,(unsigned)avr->data[0x36]);
+    }
 
 	avr_cycle_count_t next = when;
 	if (((p->ext_clock_flags & (AVR_TIMER_EXTCLK_FLAG_AS2 | AVR_TIMER_EXTCLK_FLAG_TN)) != 0)
@@ -736,8 +739,9 @@ avr_timer_reconfigure(
 {
 	avr_t * avr = p->io.avr;
 
-    if (p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm)
+    if (p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm) {
         fprintf(stderr,"NU016B RECONFIG cpu=%llu reset=%u base=%llu\n",(unsigned long long)avr->cycle,(unsigned)reset,(unsigned long long)p->tov_base);
+    }
 	// cancel everything
 	avr_timer_cancel_all_cycle_timers(avr, p, 1);
 	/* Keep all modes inert while the synchronous prescaler is held.
@@ -815,8 +819,9 @@ avr_timer_write_ocr(
 				avr_raise_irq(timer->io.irq + TIMER_IRQ_OUT_PWM2, _timer_get_ocr(timer, AVR_TIMER_COMPC));
 			break;
 		case avr_timer_wgm_fast_pwm:
-            if (timer->name == '1')
+            if (timer->name == '1') {
                 fprintf(stderr,"NU016B WRITE cpu=%llu addr=%u old=%u new=%u base=%llu\n",(unsigned long long)avr->cycle,(unsigned)addr,(unsigned)oldv,(unsigned)_timer_get_comp_ocr(avr, comp),(unsigned long long)timer->tov_base);
+            }
 			if (oldv != _timer_get_comp_ocr(avr, comp))
 				avr_timer_reconfigure(timer, 0);
 			avr_raise_irq(timer->io.irq + TIMER_IRQ_OUT_PWM0,
