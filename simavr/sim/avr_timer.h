@@ -190,6 +190,8 @@ typedef struct avr_timer_t {
      * internal Timer1 rescheduling from an actual CPU TCNT1 write. */
     uint8_t         tcnt_compare_block_pending;
     uint8_t         tcnt_internal_reschedule;
+    uint16_t        nu016ka_active[2]; /* PWM OCR active latches, not timer offsets */
+    uint8_t         nu016ka_valid;
     uint8_t         nu016j_armed; /* real period armed even if virtual base == 0 */
     uint8_t         nu016f_start_schedule; /* scoped clock-enable scheduling context */
     uint8_t         nu016h_override, nu016h_level; /* Timer1 OC state */

@@ -75,6 +75,26 @@ _timer_get_icr(
 }
 /* Shared scope for synchronous Timer1 output action in the five Fast PWM modes.
  * No change to external-clock, other timers or prescaled legacy profiles. */
+/* Architectural buffer ownership survives scheduler cancellation. */
+static int
+avr_timer_pwm_mode(unsigned mode)
+{
+    return mode==5 || mode==6 || mode==7 || mode==14 || mode==15;
+}
+
+static int
+avr_timer_pwm_latch_profile(avr_timer_t *p)
+{
+    return p->name=='1' && !strcmp(p->io.avr->mmcu,"atmega328");
+}
+
+static void
+avr_timer_pwm_latch_transfer(avr_timer_t *p)
+{
+    for (unsigned ch=0;ch<2;ch++) p->nu016ka_active[ch]=_timer_get_ocr(p,ch);
+    p->nu016ka_valid=1;
+}
+
 static int
 avr_timer_fast_pwm_output_profile(avr_timer_t *p)
 {
@@ -448,14 +468,15 @@ avr_timer_tov(
         for (unsigned ch=0;ch<AVR_TIMER_COMP_COUNT;ch++)
             if (p->comp[ch].comp_cycles==old_period)
                 dispatch[ch](avr,when,p);
+        avr_timer_pwm_latch_transfer(p);
         uint16_t new_top=p->mode.top==avr_timer_wgm_reg_ocra ?
-            _timer_get_ocr(p,0) : p->tov_top;
+            p->nu016ka_active[0] : p->tov_top;
         uint64_t old_a=p->comp[0].comp_cycles,old_b=p->comp[1].comp_cycles;
         p->tov_top=new_top;
         p->tov_cycles=(uint64_t)new_top+1;
         for (unsigned ch=0;ch<AVR_TIMER_COMP_COUNT;ch++) {
             if (!p->comp[ch].r_ocr) continue;
-            uint16_t ocr=_timer_get_ocr(p,ch);
+            uint16_t ocr=ch<2 ? p->nu016ka_active[ch] : _timer_get_ocr(p,ch);
             p->comp[ch].comp_cycles=ocr<=new_top ? (uint64_t)ocr+1 : 0;
             avr_timer_comp_on_tov(p,when,ch);
         }
@@ -785,7 +806,8 @@ avr_timer_configure(
 	for (int compi = 0; compi < AVR_TIMER_COMP_COUNT; compi++) {
 		if (!p->comp[compi].r_ocr)
 			continue;
-		uint32_t ocr = _timer_get_ocr(p, compi);
+		uint32_t ocr = p->nu016f_start_schedule && p->nu016ka_valid && compi<2 ?
+            p->nu016ka_active[compi] : _timer_get_ocr(p, compi);
 		//uint32_t comp_cycles = clock * (ocr + 1);
 		uint32_t comp_cycles;
 		if (virt_ext_clock)
@@ -907,7 +929,9 @@ avr_timer_reconfigure(
 			uint16_t top =
 				(p->mode.top == avr_timer_wgm_reg_icr) ? _timer_get_icr(p) :
                 (p->name == '1' && !strcmp(avr->mmcu,"atmega328") &&
-                 p->mode.top == avr_timer_wgm_reg_ocra) ? _timer_get_ocr(p, AVR_TIMER_COMPA) :
+                 p->mode.top == avr_timer_wgm_reg_ocra) ?
+                    (p->nu016f_start_schedule && p->nu016ka_valid ?
+                     p->nu016ka_active[0] : _timer_get_ocr(p, AVR_TIMER_COMPA)) :
 				p->wgm_op_mode_size;
 			avr_timer_configure(p, p->cs_div_value, top, reset);
 		}	break;
@@ -939,6 +963,12 @@ avr_timer_write_ocr(
         avr_timer_temp_commit_high(timer,comp->r_ocrh);
     }
 	avr_core_watch_write(avr, addr, v);
+    /* Stopped PWM still buffers writes. The mode cache in the scheduler
+     * can be stale when CS=0, so decode the guest register instead. */
+    if (avr_timer_pwm_latch_profile(timer) && timer->nu016ka_valid &&
+            avr_timer_pwm_mode(avr_regbit_get_array(avr,timer->wgm,ARRAY_SIZE(timer->wgm))) &&
+            avr_regbit_get_array(avr,timer->cs,ARRAY_SIZE(timer->cs))==0)
+        return;
 
 	switch (timer->wgm_op_mode_kind) {
 		case avr_timer_wgm_normal:
@@ -1003,6 +1033,12 @@ avr_timer_write(
 	uint8_t new_cs = avr_regbit_get_array(avr, p->cs, ARRAY_SIZE(p->cs));
 	uint8_t new_mode = avr_regbit_get_array(avr, p->wgm, ARRAY_SIZE(p->wgm));
     avr_timer_output_sync(p);
+    if (avr_timer_pwm_latch_profile(p)) {
+        if (!avr_timer_pwm_mode(new_mode))
+            p->nu016ka_valid=0;
+        else if (!avr_timer_pwm_mode(mode) || !p->nu016ka_valid)
+            avr_timer_pwm_latch_transfer(p);
+    }
 
 	// only reconfigure the timer if "relevant" bits have changed
 	// this prevent the timer reset when changing the edge detector
@@ -1068,12 +1104,16 @@ avr_timer_write(
          * Keep the scope to synchronous /1, valid nonzero TOP and TCNT<=TOP.
          * Pending buffered writes across stop and TOP=0 remain unqualified. */
         uint16_t top = new_mode == 14 ? _timer_get_icr(p) :
-            new_mode == 15 ? _timer_get_ocr(p,0) : p->wgm_op_mode_size;
+            new_mode == 15 ? (p->nu016ka_valid ? p->nu016ka_active[0] : _timer_get_ocr(p,0)) : p->wgm_op_mode_size;
         p->nu016f_start_schedule = cs == 0 && new_cs == 1 &&
             p->name == '1' && !strcmp(avr->mmcu,"atmega328") &&
             p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
             !p->sync_holding && top>0 && kept<=top;
 		avr_timer_reconfigure(p, 1);
+        if (p->nu016f_start_schedule && p->nu016ka_valid)
+            fprintf(stderr,"NU016KA RESUME cpu=%llu count=%u active_a=%u active_b=%u pending_a=%u pending_b=%u\n",
+                (unsigned long long)avr->cycle,kept,p->nu016ka_active[0],p->nu016ka_active[1],
+                _timer_get_ocr(p,0),_timer_get_ocr(p,1));
         p->nu016f_start_schedule = 0;
         if (cs == 0 && p->name == '1' &&
                 p->wgm_op_mode_kind == avr_timer_wgm_normal &&
@@ -1350,6 +1390,8 @@ avr_timer_reset(
 	avr_timer_t * p = (avr_timer_t *)port;
 	avr_timer_cancel_all_cycle_timers(p->io.avr, p, 0);
     p->read_temp_high = 0;
+    p->nu016ka_valid=0;
+    p->nu016ka_active[0]=p->nu016ka_active[1]=0;
     p->nu016h_override = p->nu016h_level = p->nu016f_start_schedule = 0;
 
 	// check to see if the comparators have a pin output. If they do,

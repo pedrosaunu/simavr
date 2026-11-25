@@ -1312,9 +1312,11 @@ run_one_again:
 								_avr_set_ram(avr, x, vd);
 								avr->cycle -= cycle;
 							} else if (!strcmp(avr->mmcu,"atmega328") &&
-                                    (((avr->data[0x80]&3)==2 &&
-                                      (avr->data[0x81]&0x1f)==0x19 &&
-                                      x==0x81 && (vd&0x1f)==0x18) ||
+                                    (((avr->data[0x81]&7)==1 && x==0x81 &&
+                                      (vd&7)==0 &&
+                                      (vd&0x18)==(avr->data[0x81]&0x18) &&
+                                      (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
+                                       ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))) ||
                                      ((avr->data[0x81]&7)==1 &&
                                       (x==0x88 || x==0x8a) &&
                                       (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
