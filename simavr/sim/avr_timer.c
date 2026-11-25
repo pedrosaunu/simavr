@@ -439,6 +439,12 @@ avr_timer_tov(
 
 	for (int compi = 0; compi < AVR_TIMER_COMP_COUNT; compi++) {
 		if (p->comp[compi].comp_cycles) {
+            /* Clock enable is schedule initialization, not a counter tick.
+             * On resume an offset at/before the retained count belongs
+             * to the elapsed part of the period. */
+            if (start && p->nu016f_start_schedule &&
+                    p->comp[compi].comp_cycles <= avr->cycle - when)
+                continue;
 			if (p->comp[compi].comp_cycles < p->tov_cycles && p->comp[compi].comp_cycles >= (avr->cycle - when)) {
                 /*
                  * Mode 14 uses the ICR1 TOP event one clock before BOTTOM.
@@ -450,7 +456,9 @@ avr_timer_tov(
                  * i.e. BOTTOM in _avr_timer_get_current_tcnt().
                  * Microchip 3.4.1 specifies OC action on TOP→BOTTOM,
                  * not one additional cycle later. Other profiles stay unchanged. */
-                if (p->wgm_op_mode_kind != avr_timer_wgm_fast_pwm ||
+                if (start && p->nu016f_start_schedule) {
+                    /* Retain OC state until a genuine compare/BOTTOM. */
+                } else if (p->wgm_op_mode_kind != avr_timer_wgm_fast_pwm ||
                         p->mode.top != avr_timer_wgm_reg_icr ||
                         (p->name == '1' && p->cs_div_value == 1))
                     avr_timer_comp_on_tov(p, when, compi);
@@ -740,6 +748,12 @@ avr_timer_configure(
 				uint64_t sync_phase = 0;
 				if (p->sync_prescaler && !use_ext_clock && prescaler > 1)
 					sync_phase = (avr->cycle - p->sync_epoch) % prescaler;
+                if (p->nu016f_start_schedule) {
+                    sync_phase = _timer_get_tcnt(p);
+                    fprintf(stderr,"NU016F RESUME cpu=%llu retained=%llu top=%u\n",
+                        (unsigned long long)avr->cycle,(unsigned long long)sync_phase,
+                        (unsigned)p->tov_top);
+                }
 				avr_cycle_timer_register(avr, p->tov_cycles - sync_phase, avr_timer_tov, p);
 				// A zero base marks this as an initial configuration.
 				p->tov_base = 0;
@@ -965,7 +979,17 @@ avr_timer_write(
          */
         uint16_t kept = (uint16_t)avr->data[p->r_tcnt] |
                  (p->r_tcnth ? ((uint16_t)avr->data[p->r_tcnth] << 8) : 0);
+        /* Scope: synchronous /1, WGM14, both OC overrides active,
+         * interior OCR values, count not beyond TOP. No bus-phase fix.
+         * This deliberately does not qualify pending OCR across a stop. */
+        uint16_t top = _timer_get_icr(p);
+        p->nu016f_start_schedule = cs == 0 && new_cs == 1 && new_mode == 14 &&
+            p->name == '1' && p->nu016h_override == 3 && !p->sync_holding &&
+            kept <= top && top > 1 && kept <= avr->cycle &&
+            _timer_get_ocr(p,0) > 0 && _timer_get_ocr(p,0) < top &&
+            _timer_get_ocr(p,1) > 0 && _timer_get_ocr(p,1) < top;
 		avr_timer_reconfigure(p, 1);
+        p->nu016f_start_schedule = 0;
         if (cs == 0 && p->name == '1' &&
                 p->wgm_op_mode_kind == avr_timer_wgm_normal &&
                 (p->cs_div_value == 1 || p->cs_div_value == 8)) {
@@ -1241,7 +1265,7 @@ avr_timer_reset(
 	avr_timer_t * p = (avr_timer_t *)port;
 	avr_timer_cancel_all_cycle_timers(p->io.avr, p, 0);
     p->read_temp_high = 0;
-    p->nu016h_override = p->nu016h_level = 0;
+    p->nu016h_override = p->nu016h_level = p->nu016f_start_schedule = 0;
 
 	// check to see if the comparators have a pin output. If they do,
 	// (try) to get the ioport corresponding IRQ and connect them
