@@ -72,6 +72,16 @@ _timer_get_icr(
 	return p->io.avr->data[p->r_icr] |
 				(p->r_tcnth ? (p->io.avr->data[p->r_icrh] << 8) : 0);
 }
+/* Shared scope for synchronous Timer1 output action in the five Fast PWM modes.
+ * No change to external-clock, other timers or prescaled legacy profiles. */
+static int
+avr_timer_fast_pwm_output_profile(avr_timer_t *p)
+{
+    return p->name=='1' && !strcmp(p->io.avr->mmcu,"atmega328") &&
+        p->wgm_op_mode_kind==avr_timer_wgm_fast_pwm && p->cs_div_value==1 &&
+        !(p->ext_clock_flags & (AVR_TIMER_EXTCLK_FLAG_TN|AVR_TIMER_EXTCLK_FLAG_AS2));
+}
+
 static avr_cycle_count_t
 avr_timer_comp(
 		avr_timer_t *p,
@@ -123,7 +133,9 @@ avr_timer_comp(
 		case avr_timer_com_normal: // Normal mode OCnA disconnected
 			break;
 		case avr_timer_com_toggle: // Toggle OCnA on compare match
-			if (p->comp[comp].com_pin.reg)	// we got a physical pin
+            if (avr_timer_fast_pwm_output_profile(p) && (p->nu016h_override&(1u<<comp)))
+                avr_timer_output_emit(p,comp,irq,flags|(!(p->nu016h_level&(1u<<comp))));
+			else if (p->comp[comp].com_pin.reg)	// we got a physical pin
 				avr_raise_irq(irq,
 						flags |
 						(avr_regbit_get(avr, p->comp[comp].com_pin) ? 0 : 1));
@@ -132,9 +144,14 @@ avr_timer_comp(
 						p->io.irq[TIMER_IRQ_OUT_COMP + comp].value ? 0 : 1);
 			break;
 		case avr_timer_com_clear:
+            /* OCR=TOP: still raise the compare flag, but BOTTOM owns OC action. */
+            if (avr_timer_fast_pwm_output_profile(p) &&
+                    p->comp[comp].comp_cycles==p->tov_cycles) break;
 			avr_timer_output_emit(p,comp,irq,flags | 0);
 			break;
 		case avr_timer_com_set:
+            if (avr_timer_fast_pwm_output_profile(p) &&
+                    p->comp[comp].comp_cycles==p->tov_cycles) break;
 			avr_timer_output_emit(p,comp,irq,flags | 1);
 			break;
 	}
@@ -438,6 +455,10 @@ avr_timer_tov(
 		{ avr_timer_compa, avr_timer_compb, avr_timer_compc };
 
 	for (int compi = 0; compi < AVR_TIMER_COMP_COUNT; compi++) {
+        /* Every real BOTTOM owns the PWM action, even with OCR=TOP
+         * or OCR above TOP. Configuration does not constitute BOTTOM. */
+        if (!start && avr_timer_fast_pwm_output_profile(p) && p->comp[compi].r_ocr)
+            avr_timer_comp_on_tov(p,when,compi);
 		if (p->comp[compi].comp_cycles) {
 			if (p->comp[compi].comp_cycles < p->tov_cycles && p->comp[compi].comp_cycles >= (avr->cycle - when)) {
                 /*
@@ -450,7 +471,9 @@ avr_timer_tov(
                  * i.e. BOTTOM in _avr_timer_get_current_tcnt().
                  * Microchip 3.4.1 specifies OC action on TOP→BOTTOM,
                  * not one additional cycle later. Other profiles stay unchanged. */
-                if (p->wgm_op_mode_kind != avr_timer_wgm_fast_pwm ||
+                if (avr_timer_fast_pwm_output_profile(p)) {
+                    /* Real BOTTOM action emitted above, independent of compare offset. */
+                } else if (p->wgm_op_mode_kind != avr_timer_wgm_fast_pwm ||
                         p->mode.top != avr_timer_wgm_reg_icr ||
                         (p->name == '1' && p->cs_div_value == 1))
                     avr_timer_comp_on_tov(p, when, compi);

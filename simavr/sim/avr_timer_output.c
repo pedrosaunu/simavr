@@ -28,8 +28,9 @@
 #include "avr_timer_output.h"
 #include "avr_ioport.h"
 
-/* Only ATmega328P Timer1 WGM14 COM=2/3, PB1/2. Other profiles retain
- * their existing IRQ wiring. COM changes are independent of CS. */
+/* ATmega328P Timer1 Fast PWM COM=2/3, and provisional COM1 A
+ * in variable TOP modes. Other modes retain legacy IRQ wiring.
+ * COM changes are independent of CS; the PORT latch is never the OC state. */
 void
 avr_timer_output_sync(avr_timer_t *p)
 {
@@ -41,7 +42,9 @@ avr_timer_output_sync(avr_timer_t *p)
         avr_regbit_t bit=p->comp[ch].com_pin;
         uint8_t mask=1u<<ch;
         uint8_t com=avr_regbit_get(avr,p->comp[ch].com);
-        int enabled=mode==14 && (com==2 || com==3);
+        int pwm=mode==5 || mode==6 || mode==7 || mode==14 || mode==15;
+        int enabled=pwm && (com==2 || com==3 ||
+            (ch==0 && com==1 && (mode==14 || mode==15)));
         if (enabled==!!(p->nu016h_override&mask)) continue;
         avr_ioport_getirq_t req={.bit=bit};
         if (avr_ioctl(avr,AVR_IOCTL_IOPORT_GETIRQ_REGBIT,&req)<=0) continue;
