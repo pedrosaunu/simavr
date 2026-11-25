@@ -30,6 +30,7 @@
 
 #include "avr_timer.h"
 #include "avr_timer_output.h"
+#include "avr_timer_registers.h"
 #include "avr_ioport.h"
 #include "sim_time.h"
 
@@ -609,6 +610,8 @@ avr_timer_tcnt_write(
 		void * param)
 {
 	avr_timer_t * p = (avr_timer_t *)param;
+    if (avr_timer_temp_profile(p) && !p->tcnt_internal_reschedule)
+        avr_timer_temp_commit_high(p,p->r_tcnth);
 	avr_core_watch_write(avr, addr, v);
     /* This callback handles TCNTnL, not the high-byte TEMP latch.
      * Only the experimental ATmega328P Timer1 WGM0 /1 profile uses
@@ -894,6 +897,8 @@ avr_timer_write_ocr(
 
 	/* check to see if the OCR values actually changed */
 	oldv = _timer_get_comp_ocr(avr, comp);
+    if (avr_timer_temp_profile(timer))
+        avr_timer_temp_commit_high(timer,comp->r_ocrh);
 	avr_core_watch_write(avr, addr, v);
 
 	switch (timer->wgm_op_mode_kind) {
@@ -1430,6 +1435,7 @@ avr_timer_init(
 			avr_register_io_write(avr, p->comp[compi].foc.reg, avr_timer_write_foc, p);
 	}
 	avr_register_io_write(avr, p->r_tcnt, avr_timer_tcnt_write, p);
+    avr_timer_temp_install(p);
 	avr_register_io_read(avr, p->r_tcnt, avr_timer_tcnt_read, p);
     if (p->r_tcnth)
         avr_register_io_read(avr,p->r_tcnth,avr_timer_shared_temp_high_read,p);
