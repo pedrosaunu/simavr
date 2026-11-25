@@ -30,7 +30,7 @@ start:
  in r20,3
  ldi r16,25
  sts 0x81,r16
- .rept 24
+ .rept 16
  nop
  .endr
  ldi r24,2
@@ -39,7 +39,7 @@ start:
  nop
  .endr
  sts 0x8a,r16
- .rept 24
+ .rept 16
  nop
  .endr
  ldi r24,3
