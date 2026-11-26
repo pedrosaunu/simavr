@@ -99,7 +99,8 @@ static int
 avr_timer_fast_pwm_output_profile(avr_timer_t *p)
 {
     return p->name=='1' && !strcmp(p->io.avr->mmcu,"atmega328") &&
-        p->wgm_op_mode_kind==avr_timer_wgm_fast_pwm && p->cs_div_value==1 &&
+        p->wgm_op_mode_kind==avr_timer_wgm_fast_pwm && (p->cs_div_value==1 ||
+        (getenv("NU016L_PRESCALED") && p->sync_prescaler && p->cs_div_value>1)) &&
         !(p->ext_clock_flags & (AVR_TIMER_EXTCLK_FLAG_TN|AVR_TIMER_EXTCLK_FLAG_AS2));
 }
 
@@ -436,14 +437,14 @@ avr_timer_tov(
         static const avr_cycle_timer_t dispatch[AVR_TIMER_COMP_COUNT] =
             { avr_timer_compa, avr_timer_compb, avr_timer_compc };
         for (unsigned ch=0;ch<2;ch++) {
-            if (p->comp[ch].comp_cycles==65536u) dispatch[ch](avr,when,p);
+            if (p->comp[ch].comp_cycles==65536u*(uint64_t)p->cs_div_value) dispatch[ch](avr,when,p);
         }
         p->nu016kb_missed=0;
         p->tov_base=when;
-        p->tov_cycles=(uint64_t)p->tov_top+1;
+        p->tov_cycles=((uint64_t)p->tov_top+1)*p->cs_div_value;
         for (unsigned ch=0;ch<2;ch++) {
             uint16_t ocr=p->nu016ka_active[ch];
-            uint64_t offset=p->comp[ch].comp_cycles=ocr<=p->tov_top ? (uint64_t)ocr+1 : 0;
+            uint64_t offset=p->comp[ch].comp_cycles=ocr<=p->tov_top ? ((uint64_t)ocr+1)*p->cs_div_value : 0;
             if (!offset || offset>=p->tov_cycles) continue;
             if (when+offset<=avr->cycle)
                 dispatch[ch](avr,when+offset,p);
@@ -474,7 +475,7 @@ avr_timer_tov(
             /* NU-016D bounded candidate: WGM14 internal /1 ICR TOP
              * raises ICF1 together with TOV1 (7810D 15.9.3). */
             if (p->name == '1' && p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
-                    p->mode.top == avr_timer_wgm_reg_icr && p->cs_div_value == 1) {
+                    p->mode.top == avr_timer_wgm_reg_icr && avr_timer_fast_pwm_output_profile(p)) {
                 avr_raise_interrupt(avr, &p->icr);
             }
         }
@@ -495,11 +496,11 @@ avr_timer_tov(
             p->nu016ka_active[0] : p->tov_top;
         uint64_t old_a=p->comp[0].comp_cycles,old_b=p->comp[1].comp_cycles;
         p->tov_top=new_top;
-        p->tov_cycles=(uint64_t)new_top+1;
+        p->tov_cycles=((uint64_t)new_top+1)*p->cs_div_value;
         for (unsigned ch=0;ch<AVR_TIMER_COMP_COUNT;ch++) {
             if (!p->comp[ch].r_ocr) continue;
             uint16_t ocr=ch<2 ? p->nu016ka_active[ch] : _timer_get_ocr(p,ch);
-            p->comp[ch].comp_cycles=ocr<=new_top ? (uint64_t)ocr+1 : 0;
+            p->comp[ch].comp_cycles=ocr<=new_top ? ((uint64_t)ocr+1)*p->cs_div_value : 0;
             avr_timer_comp_on_tov(p,when,ch);
         }
         if (old_period!=p->tov_cycles || old_a!=p->comp[0].comp_cycles ||
@@ -582,18 +583,21 @@ avr_timer_arm_retained_pwm(avr_timer_t *p, uint16_t count)
     avr_t *avr=p->io.avr;
     static const avr_cycle_timer_t dispatch[AVR_TIMER_COMP_COUNT] =
         { avr_timer_compa, avr_timer_compb, avr_timer_compc };
-    p->tov_base=avr->cycle-(avr_cycle_count_t)count;
+    uint64_t div=p->cs_div_value;
+    uint64_t phase=div>1 && p->sync_prescaler ? (avr->cycle-p->sync_epoch)%div : 0;
+    uint64_t elapsed=(uint64_t)count*div+phase;
+    p->tov_base=avr->cycle-elapsed;
     p->nu016j_armed=1;
     p->phase_accumulator=0.0f;
-    avr_cycle_timer_register(avr,p->tov_cycles-count,avr_timer_tov,p);
+    avr_cycle_timer_register(avr,p->tov_cycles-elapsed,avr_timer_tov,p);
     for (unsigned ch=0;ch<AVR_TIMER_COMP_COUNT;ch++) {
         avr_cycle_count_t offset=p->comp[ch].comp_cycles;
-        if (offset>count && offset<p->tov_cycles)
-            avr_cycle_timer_register(avr,offset-count,dispatch[ch],p);
+        if (offset>elapsed && offset<p->tov_cycles)
+            avr_cycle_timer_register(avr,offset-elapsed,dispatch[ch],p);
     }
     fprintf(stderr,"NU016J ARM cpu=%llu count=%u top=%u remaining=%llu\n",
         (unsigned long long)avr->cycle,(unsigned)count,(unsigned)p->tov_top,
-        (unsigned long long)(p->tov_cycles-count));
+        (unsigned long long)(p->tov_cycles-elapsed));
 }
 
 static uint16_t
@@ -607,7 +611,7 @@ _avr_timer_get_current_tcnt(
 		if (p->tov_cycles) {
 			uint64_t when = avr->cycle - p->tov_base;
             if (p->nu016j_armed && avr_timer_fast_pwm_output_profile(p)) {
-                return (uint16_t)when;
+                return (uint16_t)(when/p->cs_div_value);
             }
 
 			return (when * (((uint32_t)p->tov_top)+1)) / p->tov_cycles;
@@ -694,10 +698,10 @@ avr_timer_pwm_reposition(avr_timer_t *p,uint16_t count,uint16_t top)
     avr_timer_cancel_all_cycle_timers(p->io.avr,p,0);
     p->tov_top=top;
     p->nu016kb_missed=count>top;
-    p->tov_cycles=p->nu016kb_missed ? 65536u : (uint64_t)top+1;
+    p->tov_cycles=(p->nu016kb_missed ? 65536u : (uint64_t)top+1)*p->cs_div_value;
     for (unsigned ch=0;ch<2;ch++) {
         uint16_t ocr=p->nu016ka_active[ch];
-        p->comp[ch].comp_cycles=(p->nu016kb_missed || ocr<=top) ? (uint64_t)ocr+1 : 0;
+        p->comp[ch].comp_cycles=(p->nu016kb_missed || ocr<=top) ? ((uint64_t)ocr+1)*p->cs_div_value : 0;
     }
     avr_timer_arm_retained_pwm(p,count);
 }
@@ -1163,7 +1167,8 @@ avr_timer_write(
         uint16_t kept = (uint16_t)avr->data[p->r_tcnt] |
                  (p->r_tcnth ? ((uint16_t)avr->data[p->r_tcnth] << 8) : 0);
         /* Same-mode synchronous /1 start retains any 16-bit TCNT. */
-        p->nu016f_start_schedule = cs == 0 && new_cs == 1 &&
+        p->nu016f_start_schedule = cs == 0 && (new_cs == 1 ||
+            (getenv("NU016L_PRESCALED") && new_cs>=2 && new_cs<=5 && p->sync_prescaler)) &&
             p->name == '1' && !strcmp(avr->mmcu,"atmega328") &&
             p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
             !p->sync_holding;
