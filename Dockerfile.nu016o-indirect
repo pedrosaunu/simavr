@@ -5,5 +5,5 @@ WORKDIR /workspace
 COPY . .
 RUN make -C simavr RELEASE=1 all && cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim tests/weightos_nu016l_probe.c -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/probe
 RUN python3 tests/nu016o_generate.py /tmp/matrix
-RUN set -eu; for id in $(seq 1000 1035); do avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -x assembler-with-cpp /tmp/matrix/case-$id.S -o /tmp/pwm.elf; avr-objcopy -O binary -j .text /tmp/pwm.elf /tmp/pwm.bin; NU016L_PRESCALED=1 NU016_BUS_PHASE=2 LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/pwm.bin >/tmp/trace 2>/tmp/events; python3 tests/nu016l_summarize.py "$id" /tmp/pwm.bin /tmp/trace; sed -n 's/^NU016F ROW /NU016O_REF_ROW '"$id"' /p' /tmp/trace; done
+RUN set -eu; for id in $(seq 1000 1035); do avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -x assembler-with-cpp /tmp/matrix/case-$id.S -o /tmp/pwm.elf; avr-objcopy -O binary -j .text /tmp/pwm.elf /tmp/pwm.bin; NU016L_PRESCALED=1 NU016_BUS_PHASE=2 LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/pwm.bin >/tmp/trace 2>/tmp/events; python3 tests/nu016l_summarize.py "$id" /tmp/pwm.bin /tmp/trace; done
 CMD ["/bin/sh","-c","exit 0"]
