@@ -10,7 +10,7 @@ def generate(root):
     specs=[(m,cs,new) for m in (8,10) for cs in (2,) for new in (7,9)]
     for mode,cs,new in specs:
         com_a,com_b=2,3
-        cid=1920+len(cases);top=15
+        cid=1930+len(cases);top=15
         extreme=False
         a=3
         b=0 if extreme else 2
@@ -23,7 +23,7 @@ def generate(root):
         pair(0x86,top);pair(0x88,a);pair(0x8a,b);pair(0x84,initial)
         write(0x36,39);write(0x81,((mode&12)<<1)|cs);write(0x43,0)
         # At /8, 18 ticks from release puts TCNT on the falling slope.
-        lines.extend([" ldi r19,47","delay:"," dec r19"," brne delay"," nop"," nop"," nop"])
+        lines.extend([" ldi r19,47","delay:"," dec r19"," brne delay"," nop"," nop"," nop"," nop"," nop"])
         pair(0x86,new)
         lines.extend([" ldi r18,32","sample:"]+[" nop"]*(24 if cs==3 else 0)+[" lds r21,0x84"," lds r22,0x85",
             " in r23,0x16"," in r20,0x03"," inc r24"," out 0x16,r23"," dec r18"," brne sample"," ldi r25,90"," nop"])
