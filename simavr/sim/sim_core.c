@@ -1309,7 +1309,8 @@ run_one_again:
 							 * a full bus-cycle timing model and independent evidence.
 							 */
 							if (x == 0x84 && !strcmp(avr->mmcu,"atmega328") &&
-                                    (avr->data[0x81]&7)==1 &&
+                                    ((avr->data[0x81]&7)==1 ||
+                                     (getenv("NU016L_PRESCALED") && (avr->data[0x81]&7)>=2 && (avr->data[0x81]&7)<=5)) &&
                                     (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
                                      ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))) {
                                 avr_cycle_count_t before=avr->cycle,commit=before+cycle;
@@ -1327,7 +1328,13 @@ run_one_again:
 								_avr_set_ram(avr, x, vd);
 								avr->cycle -= cycle;
 							} else if (!strcmp(avr->mmcu,"atmega328") &&
-                                    (((avr->data[0x81]&7)==1 && x==0x81 &&
+                                    ((getenv("NU016L_PRESCALED") &&
+                                      (avr->data[0x81]&7)>=1 && (avr->data[0x81]&7)<=5 &&
+                                      (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
+                                       ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2)) &&
+                                      (x==0x80 || x==0x81 || x==0x88 || x==0x8a ||
+                                       (x==0x86 && (avr->data[0x80]&3)==2 && (avr->data[0x81]&0x18)==24))) ||
+                                     ((avr->data[0x81]&7)==1 && x==0x81 &&
                                       (vd&7)==0 &&
                                       (vd&0x18)==(avr->data[0x81]&0x18) &&
                                       (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||

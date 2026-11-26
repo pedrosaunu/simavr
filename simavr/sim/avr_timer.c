@@ -1033,7 +1033,8 @@ avr_timer_write_ocr(
      * can be stale when CS=0, so decode the guest register instead. */
     if (avr_timer_pwm_latch_profile(timer) && timer->nu016ka_valid &&
             avr_timer_pwm_mode(avr_regbit_get_array(avr,timer->wgm,ARRAY_SIZE(timer->wgm))) &&
-            avr_regbit_get_array(avr,timer->cs,ARRAY_SIZE(timer->cs))==0) {
+            (avr_regbit_get_array(avr,timer->cs,ARRAY_SIZE(timer->cs))==0 ||
+             (getenv("NU016L_PRESCALED") && timer->sync_holding))) {
         return;
     }
 
@@ -1093,6 +1094,9 @@ avr_timer_write(
 	uint8_t as2 = avr_regbit_get(avr, p->as2);
 	uint8_t cs = avr_regbit_get_array(avr, p->cs, ARRAY_SIZE(p->cs));
 	uint8_t mode = avr_regbit_get_array(avr, p->wgm, ARRAY_SIZE(p->wgm));
+    int live_pwm=getenv("NU016L_PRESCALED") && p->nu016j_armed &&
+        avr_timer_fast_pwm_output_profile(p);
+    uint16_t live_count=live_pwm ? _avr_timer_get_current_tcnt(p) : 0;
 
 	avr_core_watch_write(avr, addr, v);
 
@@ -1160,6 +1164,14 @@ avr_timer_write(
 		p->mode = p->wgm_op[new_mode];
 		p->wgm_op_mode_kind = p->mode.kind;
 		p->wgm_op_mode_size = (1 << p->mode.size) - 1;
+        if (live_pwm && avr_timer_fast_pwm_output_profile(p) && p->nu016ka_valid) {
+            uint16_t top=new_mode==14 ? _timer_get_icr(p) :
+                new_mode==15 ? p->nu016ka_active[0] : p->wgm_op_mode_size;
+            avr_timer_pwm_reposition(p,live_count,top);
+            fprintf(stderr,"NU016M SWITCH cpu=%llu oldmode=%u newmode=%u oldcs=%u newcs=%u count=%u top=%u\n",
+                (unsigned long long)avr->cycle,mode,new_mode,cs,new_cs,live_count,top);
+            return;
+        }
 
         /* Reconfiguring CS=0 to a clock must retain the guest-written
          * count, unlike the old zero-based reschedule. Note the counter
@@ -1237,6 +1249,10 @@ avr_timer_sync_reset(avr_t *avr, avr_timer_t *t)
 		return;
 	uint16_t counter = avr_timer_sync_current(t);
 	t->sync_epoch = avr->cycle;
+    if (getenv("NU016L_PRESCALED") && t->nu016j_armed && avr_timer_fast_pwm_output_profile(t)) {
+        avr_timer_pwm_reposition(t,counter,t->tov_top);
+        return;
+    }
 	avr_timer_reconfigure(t, 1);
 	if (t->tov_cycles > 1) {
 		if (t->r_tcnth)
@@ -1262,6 +1278,12 @@ avr_timer_sync_hold(avr_t *avr, avr_timer_t *t, int hold)
 	uint16_t counter = t->sync_hold_tcnt;
 	t->sync_holding = 0;
 	t->sync_epoch = avr->cycle;
+    if (getenv("NU016L_PRESCALED") && avr_timer_fast_pwm_output_profile(t) && t->nu016ka_valid) {
+        uint16_t top=t->mode.top==avr_timer_wgm_reg_icr ? _timer_get_icr(t) :
+            t->mode.top==avr_timer_wgm_reg_ocra ? t->nu016ka_active[0] : t->wgm_op_mode_size;
+        avr_timer_pwm_reposition(t,counter,top);
+        return;
+    }
 	avr_timer_reconfigure(t, 1);
 	if (t->tov_cycles > 1) {
 		if (t->r_tcnth)
