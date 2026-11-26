@@ -193,6 +193,7 @@ typedef struct avr_timer_t {
     uint8_t         tcnt_internal_reschedule;
     uint16_t        nu016ka_active[2]; /* PWM OCR active latches, not timer offsets */
     uint8_t         nu016ka_valid;
+    uint64_t        nu016rm_bottom_at; /* absolute end of old descending leg */
     uint8_t         nu016kb_missed; /* MAX horizon, not TOP */
     uint8_t         nu016j_armed; /* real period armed even if virtual base == 0 */
     uint8_t         nu016f_start_schedule; /* scoped clock-enable scheduling context */
