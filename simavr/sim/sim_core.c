@@ -1318,7 +1318,7 @@ run_one_again:
                                       (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
                                        ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))) ||
                                      ((avr->data[0x81]&7)==1 &&
-                                      (x==0x88 || x==0x8a) &&
+                                      (x==0x88 || x==0x8a || (x==0x86 && (avr->data[0x80]&3)==2 && (avr->data[0x81]&0x18)==24)) &&
                                       (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
                                        ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))))) {
                                 /* Diagnostic experiment only. Same opcode and ROM;

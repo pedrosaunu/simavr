@@ -54,6 +54,7 @@ static void icr_low_write(avr_t *avr, avr_io_addr_t addr, uint8_t v, void *param
     if (wgm!=8 && wgm!=10 && wgm!=12 && wgm!=14) return;
     avr_timer_temp_commit_high(p,p->r_icrh);
     avr_core_watch_write(avr,addr,v);
+    avr_timer_icr_top_changed(p);
 }
 
 void avr_timer_temp_install(avr_timer_t *p)

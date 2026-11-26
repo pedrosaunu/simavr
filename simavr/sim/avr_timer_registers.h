@@ -5,4 +5,5 @@
 int avr_timer_temp_profile(avr_timer_t *p);
 void avr_timer_temp_commit_high(avr_timer_t *p, avr_io_addr_t high);
 void avr_timer_temp_install(avr_timer_t *p);
+void avr_timer_icr_top_changed(avr_timer_t *p);
 #endif

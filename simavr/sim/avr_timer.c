@@ -167,12 +167,12 @@ avr_timer_comp(
 		case avr_timer_com_clear:
             /* OCR=TOP: still raise the compare flag, but BOTTOM owns OC action. */
             if (avr_timer_fast_pwm_output_profile(p) &&
-                    p->comp[comp].comp_cycles==p->tov_cycles) break;
+                    comp<2 && p->nu016ka_valid && p->nu016ka_active[comp]==p->tov_top) break;
 			avr_timer_output_emit(p,comp,irq,flags | 0);
 			break;
 		case avr_timer_com_set:
             if (avr_timer_fast_pwm_output_profile(p) &&
-                    p->comp[comp].comp_cycles==p->tov_cycles) break;
+                    comp<2 && p->nu016ka_valid && p->nu016ka_active[comp]==p->tov_top) break;
 			avr_timer_output_emit(p,comp,irq,flags | 1);
 			break;
 	}
@@ -431,6 +431,28 @@ avr_timer_tov(
 		}
 	}
 
+    if (!start && p->nu016kb_missed && p->nu016j_armed &&
+            avr_timer_fast_pwm_output_profile(p)) {
+        static const avr_cycle_timer_t dispatch[AVR_TIMER_COMP_COUNT] =
+            { avr_timer_compa, avr_timer_compb, avr_timer_compc };
+        for (unsigned ch=0;ch<2;ch++) {
+            if (p->comp[ch].comp_cycles==65536u) dispatch[ch](avr,when,p);
+        }
+        p->nu016kb_missed=0;
+        p->tov_base=when;
+        p->tov_cycles=(uint64_t)p->tov_top+1;
+        for (unsigned ch=0;ch<2;ch++) {
+            uint16_t ocr=p->nu016ka_active[ch];
+            uint64_t offset=p->comp[ch].comp_cycles=ocr<=p->tov_top ? (uint64_t)ocr+1 : 0;
+            if (!offset || offset>=p->tov_cycles) continue;
+            if (when+offset<=avr->cycle)
+                dispatch[ch](avr,when+offset,p);
+            else
+                avr_cycle_timer_register(avr,when+offset-avr->cycle,dispatch[ch],p);
+        }
+        fprintf(stderr,"NU016KB MAX when=%llu top=%u\n",(unsigned long long)when,p->tov_top);
+        return when+p->tov_cycles;
+    }
 	if (!start) {
         /* The internal-clock overflow callback is here, NOT in the
          * external-clock overflow dispatcher. Observation only. */
@@ -584,6 +606,9 @@ _avr_timer_get_current_tcnt(
 			) {
 		if (p->tov_cycles) {
 			uint64_t when = avr->cycle - p->tov_base;
+            if (p->nu016j_armed && avr_timer_fast_pwm_output_profile(p)) {
+                return (uint16_t)when;
+            }
 
 			return (when * (((uint32_t)p->tov_top)+1)) / p->tov_cycles;
 		}
@@ -646,6 +671,7 @@ avr_timer_cancel_all_cycle_timers(
 		const uint8_t clear_timers)
 {
 	timer->nu016j_armed = 0;
+    timer->nu016kb_missed = 0;
 	if(clear_timers) {
 		for (int compi = 0; compi < AVR_TIMER_COMP_COUNT; compi++)
 			timer->comp[compi].comp_cycles = 0;
@@ -658,6 +684,28 @@ avr_timer_cancel_all_cycle_timers(
 	avr_cycle_timer_cancel(avr, avr_timer_compb, timer);
 	avr_cycle_timer_cancel(avr, avr_timer_compc, timer);
 	avr_cycle_timer_cancel(avr, avr_timer_wgm14_bottom, timer);
+}
+
+/* ICR1 unbuffered update: count and active latches survive rescheduling.
+ * MAX wrap without actual TOP match has a separate candidate policy. */
+void avr_timer_icr_top_changed(avr_timer_t *p)
+{
+    if (!p->nu016j_armed || !avr_timer_fast_pwm_output_profile(p) ||
+            p->mode.top!=avr_timer_wgm_reg_icr) return;
+    uint16_t count=_avr_timer_get_current_tcnt(p);
+    uint16_t top=_timer_get_icr(p);
+    avr_timer_cancel_all_cycle_timers(p->io.avr,p,0);
+    p->tov_top=top;
+    p->nu016kb_missed=count>top;
+    p->tov_cycles=p->nu016kb_missed ? 65536u : (uint64_t)top+1;
+    for (unsigned ch=0;ch<2;ch++) {
+        uint16_t ocr=p->nu016ka_active[ch];
+        p->comp[ch].comp_cycles=(p->nu016kb_missed || ocr<=top) ? (uint64_t)ocr+1 : 0;
+    }
+    avr_timer_arm_retained_pwm(p,count);
+    fprintf(stderr,"NU016KB ICR cpu=%llu count=%u top=%u missed=%u horizon=%llu\n",
+        (unsigned long long)p->io.avr->cycle,count,top,p->nu016kb_missed,
+        (unsigned long long)p->tov_cycles);
 }
 
 static void
