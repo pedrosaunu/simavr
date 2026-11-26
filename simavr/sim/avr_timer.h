@@ -50,6 +50,7 @@ enum {
 #define AVR_IOCTL_TIMER_GETIRQ(_name) AVR_IOCTL_DEF('t','m','r',(_name))
 
 // add timer number/name (character) to set tracing flags
+#define AVR_IOCTL_TIMER_PWM_BLOCK(_number) AVR_IOCTL_DEF('t','m','b',(_number))
 #define AVR_IOCTL_TIMER_SET_TRACE(_number) AVR_IOCTL_DEF('t','m','t',(_number))
 // enforce using virtual clock generator when external clock is chosen by firmware
 #define AVR_IOCTL_TIMER_SET_VIRTCLK(_number) AVR_IOCTL_DEF('t','m','v',(_number))

@@ -29,6 +29,7 @@
 #include "sim_gdb.h"
 #include "avr_flash.h"
 #include "avr_watchdog.h"
+#include "avr_timer.h"
 
 /* ANSI escape codes for colored output. */
 struct text_colors simavr_font = {
@@ -1307,7 +1308,21 @@ run_one_again:
 							 * Do not generalize to other opcodes/peripherals without
 							 * a full bus-cycle timing model and independent evidence.
 							 */
-							if (x == 0x84 && !strcmp(avr->mmcu, "atmega328")) {
+							if (x == 0x84 && !strcmp(avr->mmcu,"atmega328") &&
+                                    (avr->data[0x81]&7)==1 &&
+                                    (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
+                                     ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))) {
+                                avr_cycle_count_t before=avr->cycle,commit=before+cycle;
+                                unsigned saved_run_count=avr->run_cycle_count;
+                                avr_ioctl(avr,AVR_IOCTL_TIMER_PWM_BLOCK('1'),&commit);
+                                for (unsigned k=1;k<=cycle;k++) {
+                                    avr->cycle=before+k;
+                                    avr_cycle_timer_process(avr);
+                                }
+                                _avr_set_ram(avr,x,vd);
+                                avr->cycle=before;
+                                avr->run_cycle_count=saved_run_count;
+                            } else if (x == 0x84 && !strcmp(avr->mmcu, "atmega328")) {
 								avr->cycle += cycle;
 								_avr_set_ram(avr, x, vd);
 								avr->cycle -= cycle;

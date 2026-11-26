@@ -688,12 +688,9 @@ avr_timer_cancel_all_cycle_timers(
 
 /* ICR1 unbuffered update: count and active latches survive rescheduling.
  * MAX wrap without actual TOP match has a separate candidate policy. */
-void avr_timer_icr_top_changed(avr_timer_t *p)
+static void
+avr_timer_pwm_reposition(avr_timer_t *p,uint16_t count,uint16_t top)
 {
-    if (!p->nu016j_armed || !avr_timer_fast_pwm_output_profile(p) ||
-            p->mode.top!=avr_timer_wgm_reg_icr) return;
-    uint16_t count=_avr_timer_get_current_tcnt(p);
-    uint16_t top=_timer_get_icr(p);
     avr_timer_cancel_all_cycle_timers(p->io.avr,p,0);
     p->tov_top=top;
     p->nu016kb_missed=count>top;
@@ -703,6 +700,15 @@ void avr_timer_icr_top_changed(avr_timer_t *p)
         p->comp[ch].comp_cycles=(p->nu016kb_missed || ocr<=top) ? (uint64_t)ocr+1 : 0;
     }
     avr_timer_arm_retained_pwm(p,count);
+}
+
+void avr_timer_icr_top_changed(avr_timer_t *p)
+{
+    if (!p->nu016j_armed || !avr_timer_fast_pwm_output_profile(p) ||
+            p->mode.top!=avr_timer_wgm_reg_icr) return;
+    uint16_t count=_avr_timer_get_current_tcnt(p);
+    uint16_t top=_timer_get_icr(p);
+    avr_timer_pwm_reposition(p,count,top);
     fprintf(stderr,"NU016KB ICR cpu=%llu count=%u top=%u missed=%u horizon=%llu\n",
         (unsigned long long)p->io.avr->cycle,count,top,p->nu016kb_missed,
         (unsigned long long)p->tov_cycles);
@@ -751,6 +757,13 @@ avr_timer_tcnt_write(
 		return;
 	}
 	uint16_t tcnt = _timer_get_tcnt(p);
+    if (!p->tcnt_internal_reschedule && p->nu016j_armed &&
+            avr_timer_fast_pwm_output_profile(p)) {
+        avr_timer_pwm_reposition(p,tcnt,p->tov_top);
+        fprintf(stderr,"NU016KC TCNT cpu=%llu count=%u top=%u missed=%u\n",
+            (unsigned long long)avr->cycle,tcnt,p->tov_top,p->nu016kb_missed);
+        return;
+    }
 
 	if (!p->tov_top)
 		return;
@@ -886,7 +899,7 @@ avr_timer_configure(
 	}
 
 	if (!use_ext_clock || virt_ext_clock) {
-		if (p->tov_cycles > 1) {
+		if (p->tov_cycles > 1 || p->nu016f_start_schedule) {
 			if (reset) {
 				/*
 				 * The shared 10-bit synchronous prescaler runs even
@@ -1157,7 +1170,7 @@ avr_timer_write(
         p->nu016f_start_schedule = cs == 0 && new_cs == 1 &&
             p->name == '1' && !strcmp(avr->mmcu,"atmega328") &&
             p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
-            !p->sync_holding && top>0 && kept<=top;
+            !p->sync_holding && kept<=top;
 		avr_timer_reconfigure(p, 1);
         if (p->nu016f_start_schedule && p->nu016ka_valid)
             fprintf(stderr,"NU016KA RESUME cpu=%llu count=%u active_a=%u active_b=%u pending_a=%u pending_b=%u\n",
@@ -1392,6 +1405,13 @@ avr_timer_ioctl(
 {
 	avr_timer_t * p = (avr_timer_t *)port;
 	int res = -1;
+    /* Bus-phase experiment: inhibit compare on the commit tick, before
+     * processing due callbacks. Do not mask BOTTOM or the next tick. */
+    if (ctl==AVR_IOCTL_TIMER_PWM_BLOCK(p->name) &&
+            p->nu016j_armed && avr_timer_fast_pwm_output_profile(p)) {
+        p->tcnt_write_block_cycle=*(avr_cycle_count_t*)io_param;
+        return 0;
+    }
 
 	if (ctl == AVR_IOCTL_TIMER_SET_TRACE(p->name)) {
 		/* Allow setting individual trace flags */
