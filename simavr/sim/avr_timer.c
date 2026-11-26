@@ -115,26 +115,44 @@ nu016rh_tick(avr_t *avr, avr_cycle_count_t when, void *param)
     uint32_t previous=(next+period-1)%period;
     uint32_t count=previous<=top?previous:period-previous;
     unsigned mode=avr_regbit_get_array(avr,p->wgm,ARRAY_SIZE(p->wgm));
-    if(!next)avr_raise_interrupt(avr,&p->overflow);
-    if(next==top && (mode==8||mode==10))avr_raise_interrupt(avr,&p->icr);
+    int descending=previous>=top,peak=next==top,bottom=!next;
+    int changing_top=getenv("NU016RM_DYNAMIC_TOP") && (mode==9||mode==11);
+    if(changing_top && p->nu016rm_bottom_at) {
+        /* During a changed WGM11 falling leg use the old apex's
+         * absolute deadline, independent of the new period. */
+        count=(p->nu016rm_bottom_at-when)/p->cs_div_value+1;
+        descending=1;peak=0;bottom=when==p->nu016rm_bottom_at;
+    }
+    if(bottom)avr_raise_interrupt(avr,&p->overflow);
+    if(peak && (mode==8||mode==10))avr_raise_interrupt(avr,&p->icr);
     for(unsigned ch=0;ch<2;ch++){
         unsigned ocr=getenv("NU016RJ_DYNAMIC_OCR")?p->nu016ka_active[ch]:_timer_get_ocr(p,ch);
         unsigned com=avr_regbit_get(avr,p->comp[ch].com);
         int special=ch==0 && (mode==9||mode==11);
-        int match=special?next==top:count==ocr;
+        int match=special?peak:count==ocr;
         if(match)avr_raise_interrupt(avr,&p->comp[ch].interrupt);
         int level=-1;
         if(com==1 && special && match)level=!(p->nu016h_level&(1u<<ch));
         if(com==2||com==3){
             if(!ocr)level=com==3;
             else if(ocr==top)level=com==2;
-            else if(match)level=(previous>=top)^(com==3);
+            else if(match)level=descending^(com==3);
         }
         if(level>=0)avr_timer_output_emit(p,ch,&p->io.irq[TIMER_IRQ_OUT_COMP+ch],
             AVR_IOPORT_OUTPUT|(unsigned)level);
     }
-    if(getenv("NU016RJ_DYNAMIC_OCR") && (next==(mode==8||mode==9?0:top))) {
+    if(getenv("NU016RJ_DYNAMIC_OCR") && (mode==8||mode==9?bottom:peak)) {
         for(unsigned ch=0;ch<2;ch++)p->nu016ka_active[ch]=_timer_get_ocr(p,ch);
+        if(changing_top && p->nu016ka_active[0]!=top) {
+            if(mode==11)p->nu016rm_bottom_at=when+(uint64_t)top*p->cs_div_value;
+            p->tov_top=p->nu016ka_active[0];
+            p->tov_cycles=2ULL*p->tov_top*p->cs_div_value;
+            if(mode==9)p->tov_base=when;
+        }
+    }
+    if(changing_top && bottom && p->nu016rm_bottom_at) {
+        p->nu016rm_bottom_at=0;
+        p->tov_base=when;
     }
     return when+p->cs_div_value;
 }
@@ -146,6 +164,7 @@ nu016rh_arm(avr_timer_t *p,uint16_t count)
     uint64_t div=p->cs_div_value;
     uint64_t phase=p->sync_prescaler?(avr->cycle-p->sync_epoch)%div:0;
     if(getenv("NU016RJ_DYNAMIC_OCR"))for(unsigned ch=0;ch<2;ch++)p->nu016ka_active[ch]=_timer_get_ocr(p,ch);
+    p->nu016rm_bottom_at=0;
     p->tov_base=avr->cycle-(uint64_t)count*div-phase;
     avr_cycle_timer_register(avr,div-phase,nu016rh_tick,p);
 }
@@ -679,6 +698,8 @@ _avr_timer_get_current_tcnt(
 		if (p->tov_cycles) {
 			uint64_t when = avr->cycle - p->tov_base;
             if (nu016ra_dual_count(p)) {
+                if(getenv("NU016RM_DYNAMIC_TOP") && p->nu016rm_bottom_at && avr->cycle<p->nu016rm_bottom_at)
+                    return (p->nu016rm_bottom_at-avr->cycle+p->cs_div_value-1)/p->cs_div_value;
                 uint64_t period=2ULL*p->tov_top;
                 uint64_t phase=(when/p->cs_div_value)%period;
                 return phase<=p->tov_top ? phase : period-phase;
