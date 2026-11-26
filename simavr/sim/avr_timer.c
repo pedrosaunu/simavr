@@ -33,6 +33,7 @@
 #include "avr_timer_registers.h"
 #include "avr_ioport.h"
 #include "sim_time.h"
+#include <stdlib.h>
 
 /*
  * The timers are /always/ 16 bits here, if the higher byte register
