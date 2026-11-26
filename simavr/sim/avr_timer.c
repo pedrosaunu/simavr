@@ -95,6 +95,57 @@ nu016ra_dual_count(avr_timer_t *p)
         (m==1||m==2||m==3||m==8||m==9||m==10||m==11);
 }
 
+/* Opt-in stable dual-slope witness. Schedule oscillator edges using
+ * elapsed period phase, not the neural direction-state recurrence.
+ * Dynamic TOP/OCR, live COM writes and IRQ delivery are unqualified. */
+static int
+nu016rh_events(avr_timer_t *p)
+{
+    return getenv("NU016RH_EVENTS") && nu016ra_dual_count(p) &&
+        (!strcmp(p->io.avr->mmcu,"atmega328") || !strcmp(p->io.avr->mmcu,"atmega328p"));
+}
+
+static avr_cycle_count_t
+nu016rh_tick(avr_t *avr, avr_cycle_count_t when, void *param)
+{
+    avr_timer_t *p=param;
+    if(!nu016rh_events(p) || p->sync_holding)return 0;
+    uint32_t top=p->tov_top,period=2u*top;
+    uint32_t next=((when-p->tov_base)/p->cs_div_value)%period;
+    uint32_t previous=(next+period-1)%period;
+    uint32_t count=previous<=top?previous:period-previous;
+    unsigned mode=avr_regbit_get_array(avr,p->wgm,ARRAY_SIZE(p->wgm));
+    if(!next)avr_raise_interrupt(avr,&p->overflow);
+    if(next==top && (mode==8||mode==10))avr_raise_interrupt(avr,&p->icr);
+    for(unsigned ch=0;ch<2;ch++){
+        unsigned ocr=_timer_get_ocr(p,ch);
+        unsigned com=avr_regbit_get(avr,p->comp[ch].com);
+        int special=ch==0 && (mode==9||mode==11);
+        int match=special?next==top:count==ocr;
+        if(match)avr_raise_interrupt(avr,&p->comp[ch].interrupt);
+        int level=-1;
+        if(com==1 && special && match)level=!(p->nu016h_level&(1u<<ch));
+        if(com==2||com==3){
+            if(!ocr)level=com==3;
+            else if(ocr==top)level=com==2;
+            else if(match)level=(previous>=top)^(com==3);
+        }
+        if(level>=0)avr_timer_output_emit(p,ch,&p->io.irq[TIMER_IRQ_OUT_COMP+ch],
+            AVR_IOPORT_OUTPUT|(unsigned)level);
+    }
+    return when+p->cs_div_value;
+}
+
+static void
+nu016rh_arm(avr_timer_t *p,uint16_t count)
+{
+    avr_t *avr=p->io.avr;
+    uint64_t div=p->cs_div_value;
+    uint64_t phase=p->sync_prescaler?(avr->cycle-p->sync_epoch)%div:0;
+    p->tov_base=avr->cycle-(uint64_t)count*div-phase;
+    avr_cycle_timer_register(avr,div-phase,nu016rh_tick,p);
+}
+
 static int
 avr_timer_pwm_latch_profile(avr_timer_t *p)
 {
@@ -701,6 +752,7 @@ avr_timer_cancel_all_cycle_timers(
 	}
 
 
+	avr_cycle_timer_cancel(avr, nu016rh_tick, timer);
 	avr_cycle_timer_cancel(avr, avr_timer_tov, timer);
 	avr_cycle_timer_cancel(avr, avr_timer_compa, timer);
 	avr_cycle_timer_cancel(avr, avr_timer_compb, timer);
@@ -790,7 +842,13 @@ avr_timer_tcnt_write(
 	if (!p->tov_top)
 		return;
 
-	if (tcnt >= p->tov_top && !nu016ra_dual_count(p))
+	if (nu016rh_events(p)) {
+        avr_timer_cancel_all_cycle_timers(avr,p,0);
+        nu016rh_arm(p,tcnt);
+        return;
+    }
+
+    if (tcnt >= p->tov_top && !nu016ra_dual_count(p))
 		tcnt = 0;
 
 	if (!(p->ext_clock_flags & (AVR_TIMER_EXTCLK_FLAG_TN | AVR_TIMER_EXTCLK_FLAG_AS2)) ||
@@ -930,6 +988,11 @@ avr_timer_configure(
 					(int)comp_cycles);
 		}
 	}
+
+	if (nu016rh_events(p)) {
+        nu016rh_arm(p,0);
+        return;
+    }
 
 	if (!use_ext_clock || virt_ext_clock) {
 		if (p->tov_cycles > 1 || p->nu016f_start_schedule) {
