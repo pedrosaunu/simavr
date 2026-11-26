@@ -117,7 +117,8 @@ nu016rh_tick(avr_t *avr, avr_cycle_count_t when, void *param)
     unsigned mode=avr_regbit_get_array(avr,p->wgm,ARRAY_SIZE(p->wgm));
     int descending=previous>=top,peak=next==top,bottom=!next;
     int changing_top=getenv("NU016RM_DYNAMIC_TOP") && (mode==9||mode==11);
-    if(changing_top && p->nu016rm_bottom_at) {
+    int live_icr=getenv("NU016RO_LIVE_ICR") && (mode==8||mode==10);
+    if((changing_top||live_icr) && p->nu016rm_bottom_at) {
         /* During a changed WGM11 falling leg use the old apex's
          * absolute deadline, independent of the new period. */
         count=(p->nu016rm_bottom_at-when)/p->cs_div_value+1;
@@ -150,7 +151,7 @@ nu016rh_tick(avr_t *avr, avr_cycle_count_t when, void *param)
             if(mode==9)p->tov_base=when;
         }
     }
-    if(changing_top && bottom && p->nu016rm_bottom_at) {
+    if((changing_top||live_icr) && bottom && p->nu016rm_bottom_at) {
         p->nu016rm_bottom_at=0;
         p->tov_base=when;
     }
@@ -698,7 +699,7 @@ _avr_timer_get_current_tcnt(
 		if (p->tov_cycles) {
 			uint64_t when = avr->cycle - p->tov_base;
             if (nu016ra_dual_count(p)) {
-                if(getenv("NU016RM_DYNAMIC_TOP") && p->nu016rm_bottom_at && avr->cycle<p->nu016rm_bottom_at)
+                if((getenv("NU016RM_DYNAMIC_TOP")||getenv("NU016RO_LIVE_ICR")) && p->nu016rm_bottom_at && avr->cycle<p->nu016rm_bottom_at)
                     return (p->nu016rm_bottom_at-avr->cycle+p->cs_div_value-1)/p->cs_div_value;
                 uint64_t period=2ULL*p->tov_top;
                 uint64_t phase=(when/p->cs_div_value)%period;
@@ -803,6 +804,23 @@ avr_timer_pwm_reposition(avr_timer_t *p,uint16_t count,uint16_t top)
 
 void avr_timer_icr_top_changed(avr_timer_t *p)
 {
+    unsigned mode=avr_regbit_get_array(p->io.avr,p->wgm,ARRAY_SIZE(p->wgm));
+    if(getenv("NU016RO_LIVE_ICR") && nu016rh_events(p) && !p->sync_holding && (mode==8||mode==10)){
+        avr_t *avr=p->io.avr;
+        uint64_t div=p->cs_div_value,elapsed=avr->cycle-p->tov_base;
+        uint64_t residue=elapsed%div,phase=(elapsed/div)%(2ULL*p->tov_top);
+        uint16_t count=_avr_timer_get_current_tcnt(p),top=_timer_get_icr(p);
+        int down=p->nu016rm_bottom_at || phase>=p->tov_top;
+        if(top<=count || top<3 || p->nu016ka_active[0]>=top || p->nu016ka_active[1]>=top){
+            fprintf(stderr,"NU016RO_UNQUALIFIED count=%u top=%u\n",count,top);
+            return;
+        }
+        p->tov_top=top;p->tov_cycles=2ULL*top*div;
+        if(down)p->nu016rm_bottom_at=avr->cycle+count*div-residue;
+        else p->tov_base=avr->cycle-count*div-residue;
+        fprintf(stderr,"NU016RO_COMMIT count=%u top=%u down=%d\n",count,top,down);
+        return;
+    }
     if (!p->nu016j_armed || !avr_timer_fast_pwm_output_profile(p) ||
             p->mode.top!=avr_timer_wgm_reg_icr) return;
     uint16_t count=_avr_timer_get_current_tcnt(p);
