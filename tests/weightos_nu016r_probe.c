@@ -8,7 +8,7 @@ int main(int argc,char**argv){
  avr_t*a=avr_make_mcu_by_name("atmega328p");if(!a||avr_init(a))return 3;
  a->frequency=16000000;avr_loadcode(a,image,n,0);
  unsigned tag=0;
- for(unsigned i=0;i<600;i++){
+ for(unsigned i=0;i<1200;i++){
   a->run_cycle_limit=1;a->run_cycle_count=1;int rc=avr_run(a);
   if(a->data[24]!=tag){tag=a->data[24];printf("NU016R ROW %u,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",i+1,(unsigned long long)a->cycle,a->pc/2,a->data[24],a->data[25],a->data[17],a->data[19],a->data[21]+256U*a->data[22],a->data[23],a->data[0x43],a->data[20],a->data[0x81]);}
   if(a->data[25]==90){puts("NU016R PASS");avr_terminate(a);return 0;}
