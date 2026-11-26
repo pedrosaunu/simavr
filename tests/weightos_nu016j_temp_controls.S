@@ -1,0 +1,39 @@
+.text
+.global start
+start:
+ cli
+ ldi r16,24
+ sts 0x81,r16
+ ldi r16,0x12
+ sts 0x89,r16
+ ldi r16,0x34
+ sts 0x8a,r16
+ ldi r16,0x56
+ sts 0x88,r16
+ lds r21,0x88
+ lds r22,0x89
+ ldi r24,1
+ ldi r16,0xab
+ sts 0x87,r16
+ ldi r16,0xcd
+ sts 0x86,r16
+ ldi r16,0xef
+ sts 0x89,r16
+ lds r21,0x88
+ lds r22,0x89
+ ldi r24,2
+ ldi r16,0x78
+ sts 0x8a,r16
+ lds r21,0x8a
+ lds r22,0x8b
+ ldi r24,3
+ lds r21,0x86
+ lds r22,0x87
+ ldi r24,4
+ ldi r16,0x9a
+ sts 0x84,r16
+ lds r21,0x84
+ lds r22,0x85
+ ldi r24,5
+ ldi r25,90
+ nop
