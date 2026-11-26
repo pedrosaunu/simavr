@@ -371,6 +371,82 @@ static inline void _avr_set_ram(avr_t * avr, uint16_t addr, uint8_t v)
 	avr_core_watch_write(avr, addr, v);
 }
 
+/* Existing direct-store candidate bus timing, shared with the opt-in
+ * indirect diagnostic. This is not a general silicon bus-cycle model. */
+static inline void
+_nu016_timer1_store(avr_t *avr, uint16_t x, uint8_t vd, unsigned cycle)
+{
+    if (x == 0x84 && !strcmp(avr->mmcu,"atmega328") &&
+                                    ((avr->data[0x81]&7)==1 ||
+                                     (getenv("NU016L_PRESCALED") && (avr->data[0x81]&7)>=2 && (avr->data[0x81]&7)<=5)) &&
+                                    (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
+                                     ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))) {
+                                avr_cycle_count_t before=avr->cycle,commit=before+cycle;
+                                unsigned saved_run_count=avr->run_cycle_count;
+                                avr_ioctl(avr,AVR_IOCTL_TIMER_PWM_BLOCK('1'),&commit);
+                                for (unsigned k=1;k<=cycle;k++) {
+                                    avr->cycle=before+k;
+                                    avr_cycle_timer_process(avr);
+                                }
+                                _avr_set_ram(avr,x,vd);
+                                avr->cycle=before;
+                                avr->run_cycle_count=saved_run_count;
+                            } else if (x == 0x84 && !strcmp(avr->mmcu, "atmega328")) {
+								avr->cycle += cycle;
+								_avr_set_ram(avr, x, vd);
+								avr->cycle -= cycle;
+							} else if (!strcmp(avr->mmcu,"atmega328") &&
+                                    ((getenv("NU016L_PRESCALED") &&
+                                      (avr->data[0x81]&7)>=1 && (avr->data[0x81]&7)<=5 &&
+                                      (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
+                                       ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2)) &&
+                                      (x==0x80 || x==0x81 || x==0x88 || x==0x8a ||
+                                       (x==0x86 && (avr->data[0x80]&3)==2 && (avr->data[0x81]&0x18)==24))) ||
+                                     ((avr->data[0x81]&7)==1 && x==0x81 &&
+                                      (vd&7)==0 &&
+                                      (vd&0x18)==(avr->data[0x81]&0x18) &&
+                                      (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
+                                       ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))) ||
+                                     ((avr->data[0x81]&7)==1 &&
+                                      (x==0x88 || x==0x8a || (x==0x86 && (avr->data[0x80]&3)==2 && (avr->data[0x81]&0x18)==24)) &&
+                                      (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
+                                       ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))))) {
+                                /* Diagnostic experiment only. Same opcode and ROM;
+                                 * independently vary when due events precede the store.
+                                 * No clock-enable change and no general CPU bus claim. */
+                                const char *env=getenv("NU016_BUS_PHASE");
+                                unsigned phase=env ? (unsigned)atoi(env) : 0;
+                                if (phase>2) abort();
+                                avr_cycle_count_t before=avr->cycle;
+                                unsigned saved_run_count=avr->run_cycle_count;
+                                for (unsigned k=1;k<=phase;k++) {
+                                    avr->cycle=before+k;
+                                    avr_cycle_timer_process(avr);
+                                }
+                                fprintf(stderr,"NU016BUS WRITE phase=%u addr=%u entry=%llu commit=%llu retirement=%llu\n",
+                                    phase,(unsigned)x,(unsigned long long)before,
+                                    (unsigned long long)avr->cycle,(unsigned long long)(before+cycle));
+                                _avr_set_ram(avr,x,vd);
+                                avr->cycle=before;
+                                avr->run_cycle_count=saved_run_count;
+                            } else {
+                                _avr_set_ram(avr, x, vd);
+							}
+}
+
+static inline void
+_nu016_indirect_store(avr_t *avr, uint16_t addr, uint8_t value, unsigned cycle)
+{
+    if (getenv("NU016O_INDIRECT") && !strcmp(avr->mmcu,"atmega328") &&
+        (addr == 0x84 || addr == 0x8a) &&
+        (avr->data[0x81]&7)>=1 && (avr->data[0x81]&7)<=5 &&
+        (avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)==2) {
+        _nu016_timer1_store(avr, addr, value, cycle);
+    } else {
+        _avr_set_ram(avr, addr, value);
+    }
+}
+
 /*
  * Get a value from SRAM.
  */
@@ -1057,7 +1133,7 @@ run_one_again:
 					if (opcode & 0x0200) {
 						STATE("st (Z+%d[%04x]), %s[%02x]  \t%s\n",
 						      q, v+q, AVR_REGNAME(d), avr->data[d], DAS(v + q));
-						_avr_set_ram(avr, v+q, avr->data[d]);
+						_nu016_indirect_store(avr, v+q, avr->data[d], cycle+1);
 					} else {
 						STATE("ld %s, (Z+%d[%04x])=[%02x]  \t%s\n",
 						      AVR_REGNAME(d), q, v+q, avr->data[v+q], DAS(v + q));
@@ -1072,7 +1148,7 @@ run_one_again:
 					if (opcode & 0x0200) {
 						STATE("st (Y+%d[%04x]), %s[%02x]  \t%s\n",
 						      q, v+q, AVR_REGNAME(d), avr->data[d], DAS(v + q));
-						_avr_set_ram(avr, v+q, avr->data[d]);
+						_nu016_indirect_store(avr, v+q, avr->data[d], cycle+1);
 					} else {
 						STATE("ld %s, (Y+%d[%04x])=[%02x]  \t%s\n",
 						      AVR_REGNAME(d), q, v+q, avr->data[d+q], DAS(v + q));
@@ -1261,7 +1337,7 @@ run_one_again:
 							      AVR_REGNAME(d), vd, DAS(x));
 							cycle++; // 2 cycles, except tinyavr
 							if (op == 2) x--;
-							_avr_set_ram(avr, x, vd);
+							_nu016_indirect_store(avr, x, vd, cycle);
 							if (op == 1) x++;
 							_avr_set_r16le_hl(avr, R_XL, x);
 						}	break;
@@ -1291,7 +1367,7 @@ run_one_again:
 							      AVR_REGNAME(d), vd, DAS(y));
 							cycle++;
 							if (op == 2) y--;
-							_avr_set_ram(avr, y, vd);
+							_nu016_indirect_store(avr, y, vd, cycle);
 							if (op == 1) y++;
 							_avr_set_r16le_hl(avr, R_YL, y);
 						}	break;
@@ -1308,62 +1384,7 @@ run_one_again:
 							 * Do not generalize to other opcodes/peripherals without
 							 * a full bus-cycle timing model and independent evidence.
 							 */
-							if (x == 0x84 && !strcmp(avr->mmcu,"atmega328") &&
-                                    ((avr->data[0x81]&7)==1 ||
-                                     (getenv("NU016L_PRESCALED") && (avr->data[0x81]&7)>=2 && (avr->data[0x81]&7)<=5)) &&
-                                    (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
-                                     ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))) {
-                                avr_cycle_count_t before=avr->cycle,commit=before+cycle;
-                                unsigned saved_run_count=avr->run_cycle_count;
-                                avr_ioctl(avr,AVR_IOCTL_TIMER_PWM_BLOCK('1'),&commit);
-                                for (unsigned k=1;k<=cycle;k++) {
-                                    avr->cycle=before+k;
-                                    avr_cycle_timer_process(avr);
-                                }
-                                _avr_set_ram(avr,x,vd);
-                                avr->cycle=before;
-                                avr->run_cycle_count=saved_run_count;
-                            } else if (x == 0x84 && !strcmp(avr->mmcu, "atmega328")) {
-								avr->cycle += cycle;
-								_avr_set_ram(avr, x, vd);
-								avr->cycle -= cycle;
-							} else if (!strcmp(avr->mmcu,"atmega328") &&
-                                    ((getenv("NU016L_PRESCALED") &&
-                                      (avr->data[0x81]&7)>=1 && (avr->data[0x81]&7)<=5 &&
-                                      (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
-                                       ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2)) &&
-                                      (x==0x80 || x==0x81 || x==0x88 || x==0x8a ||
-                                       (x==0x86 && (avr->data[0x80]&3)==2 && (avr->data[0x81]&0x18)==24))) ||
-                                     ((avr->data[0x81]&7)==1 && x==0x81 &&
-                                      (vd&7)==0 &&
-                                      (vd&0x18)==(avr->data[0x81]&0x18) &&
-                                      (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
-                                       ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))) ||
-                                     ((avr->data[0x81]&7)==1 &&
-                                      (x==0x88 || x==0x8a || (x==0x86 && (avr->data[0x80]&3)==2 && (avr->data[0x81]&0x18)==24)) &&
-                                      (((avr->data[0x81]&0x18)==8 && (avr->data[0x80]&3)!=0) ||
-                                       ((avr->data[0x81]&0x18)==24 && (avr->data[0x80]&3)>=2))))) {
-                                /* Diagnostic experiment only. Same opcode and ROM;
-                                 * independently vary when due events precede the store.
-                                 * No clock-enable change and no general CPU bus claim. */
-                                const char *env=getenv("NU016_BUS_PHASE");
-                                unsigned phase=env ? (unsigned)atoi(env) : 0;
-                                if (phase>2) abort();
-                                avr_cycle_count_t before=avr->cycle;
-                                unsigned saved_run_count=avr->run_cycle_count;
-                                for (unsigned k=1;k<=phase;k++) {
-                                    avr->cycle=before+k;
-                                    avr_cycle_timer_process(avr);
-                                }
-                                fprintf(stderr,"NU016BUS WRITE phase=%u addr=%u entry=%llu commit=%llu retirement=%llu\n",
-                                    phase,(unsigned)x,(unsigned long long)before,
-                                    (unsigned long long)avr->cycle,(unsigned long long)(before+cycle));
-                                _avr_set_ram(avr,x,vd);
-                                avr->cycle=before;
-                                avr->run_cycle_count=saved_run_count;
-                            } else {
-                                _avr_set_ram(avr, x, vd);
-							}
+							_nu016_timer1_store(avr, x, vd, cycle);
 						}	break;
 						case 0x9001:
 						case 0x9002: {	// LD -- Load Indirect from Data using Z -- 1001 000d dddd 00oo
@@ -1389,7 +1410,7 @@ run_one_again:
 							      AVR_REGNAME(d), vd, DAS(z));
 							cycle++; // 2 cycles, except tinyavr
 							if (op == 2) z--;
-							_avr_set_ram(avr, z, vd);
+							_nu016_indirect_store(avr, z, vd, cycle);
 							if (op == 1) z++;
 							_avr_set_r16le_hl(avr, R_ZL, z);
 						}	break;
