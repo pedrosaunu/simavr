@@ -751,7 +751,9 @@ avr_timer_tcnt_read(
 	// made to trigger potential watchpoints
 
 	uint16_t tcnt = p->sync_holding ? p->sync_hold_tcnt :
-		(p->sync_prescaler && (!p->cs_div_value || !p->tov_cycles))
+		(p->sync_prescaler && (!p->cs_div_value || !p->tov_cycles) &&
+            !((p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_TN) &&
+              !(p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_VIRT)))
 			? _timer_get_tcnt(p) : _avr_timer_get_current_tcnt(p);
 
 	avr->data[p->r_tcnt] = tcnt;
