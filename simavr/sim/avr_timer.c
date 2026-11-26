@@ -912,7 +912,7 @@ avr_timer_configure(
 				if (p->sync_prescaler && !use_ext_clock && prescaler > 1)
 					sync_phase = (avr->cycle - p->sync_epoch) % prescaler;
                 if (p->nu016f_start_schedule) {
-                    avr_timer_arm_retained_pwm(p,_timer_get_tcnt(p));
+                    avr_timer_pwm_reposition(p,_timer_get_tcnt(p),p->tov_top);
                 } else {
 				    avr_cycle_timer_register(avr, p->tov_cycles - sync_phase, avr_timer_tov, p);
 				    // A zero base marks this as an initial configuration.
@@ -1162,15 +1162,11 @@ avr_timer_write(
          */
         uint16_t kept = (uint16_t)avr->data[p->r_tcnt] |
                  (p->r_tcnth ? ((uint16_t)avr->data[p->r_tcnth] << 8) : 0);
-        /* Clock scheduling is independent of COM ownership and OCR duty.
-         * Keep the scope to synchronous /1, valid nonzero TOP and TCNT<=TOP.
-         * Pending buffered writes across stop and TOP=0 remain unqualified. */
-        uint16_t top = new_mode == 14 ? _timer_get_icr(p) :
-            new_mode == 15 ? (p->nu016ka_valid ? p->nu016ka_active[0] : _timer_get_ocr(p,0)) : p->wgm_op_mode_size;
+        /* Same-mode synchronous /1 start retains any 16-bit TCNT. */
         p->nu016f_start_schedule = cs == 0 && new_cs == 1 &&
             p->name == '1' && !strcmp(avr->mmcu,"atmega328") &&
             p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
-            !p->sync_holding && kept<=top;
+            !p->sync_holding;
 		avr_timer_reconfigure(p, 1);
         if (p->nu016f_start_schedule && p->nu016ka_valid)
             fprintf(stderr,"NU016KA RESUME cpu=%llu count=%u active_a=%u active_b=%u pending_a=%u pending_b=%u\n",
