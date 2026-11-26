@@ -843,6 +843,15 @@ avr_timer_configure(
 		uint32_t top,
 		uint8_t reset)
 {
+    /* WGM10/11 are variable TOP phase-correct modes. The fixed-width
+     * fc_pwm dispatch otherwise supplies wgm_op_mode_size. Resolve TOP
+     * from the actual WGM in this count-only experiment, not cached kind. */
+    if (getenv("NU016RA_DUAL_COUNT") && p->name=='1' &&
+        !(p->ext_clock_flags & (AVR_TIMER_EXTCLK_FLAG_TN|AVR_TIMER_EXTCLK_FLAG_AS2))) {
+        unsigned mode=avr_regbit_get_array(p->io.avr,p->wgm,ARRAY_SIZE(p->wgm));
+        if(mode==8||mode==10)top=_timer_get_icr(p);
+        if(mode==9||mode==11)top=_timer_get_ocr(p,AVR_TIMER_COMPA);
+    }
 	p->tov_top = top;
 
 	avr_t * avr = p->io.avr;
