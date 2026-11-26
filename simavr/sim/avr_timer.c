@@ -83,6 +83,18 @@ avr_timer_pwm_mode(unsigned mode)
     return mode==5 || mode==6 || mode==7 || mode==14 || mode==15;
 }
 
+/* NU016RA count-only experiment: stable TOP, internal Timer1 clock.
+ * The legacy scheduled compare/OC events are NOT qualified by this option.
+ * No changes to the default reference or external-clock implementation. */
+static int
+nu016ra_dual_count(avr_timer_t *p)
+{
+    unsigned m=avr_regbit_get_array(p->io.avr,p->wgm,ARRAY_SIZE(p->wgm));
+    return getenv("NU016RA_DUAL_COUNT") && p->name=='1' && p->cs_div_value &&
+        p->tov_top && !(p->ext_clock_flags & (AVR_TIMER_EXTCLK_FLAG_TN|AVR_TIMER_EXTCLK_FLAG_AS2)) &&
+        (m==1||m==2||m==3||m==8||m==9||m==10||m==11);
+}
+
 static int
 avr_timer_pwm_latch_profile(avr_timer_t *p)
 {
@@ -611,6 +623,11 @@ _avr_timer_get_current_tcnt(
 			) {
 		if (p->tov_cycles) {
 			uint64_t when = avr->cycle - p->tov_base;
+            if (nu016ra_dual_count(p)) {
+                uint64_t period=2ULL*p->tov_top;
+                uint64_t phase=(when/p->cs_div_value)%period;
+                return phase<=p->tov_top ? phase : period-phase;
+            }
             if (p->nu016j_armed && avr_timer_fast_pwm_output_profile(p)) {
                 return (uint16_t)(when/p->cs_div_value);
             }
@@ -773,7 +790,7 @@ avr_timer_tcnt_write(
 	if (!p->tov_top)
 		return;
 
-	if (tcnt >= p->tov_top)
+	if (tcnt >= p->tov_top && !nu016ra_dual_count(p))
 		tcnt = 0;
 
 	if (!(p->ext_clock_flags & (AVR_TIMER_EXTCLK_FLAG_TN | AVR_TIMER_EXTCLK_FLAG_AS2)) ||
@@ -788,6 +805,7 @@ avr_timer_tcnt_write(
 		avr_timer_cancel_all_cycle_timers(avr, p, 0);
 
 		uint64_t cycles = (tcnt * p->tov_cycles) / p->tov_top;
+        if (nu016ra_dual_count(p)) cycles=(uint64_t)tcnt*p->cs_div_value;
 		/*
 		 * TCNT writes do not reset the synchronous prescaler. Preserve
 		 * the shared sub-tick phase rather than restarting each timer's
@@ -839,6 +857,7 @@ avr_timer_configure(
 		if (prescaler != 0)
 			resulting_clock = (float)avr->frequency / prescaler;
 		p->tov_cycles = prescaler * (top+1);
+        if (nu016ra_dual_count(p)) p->tov_cycles=2ULL*top*prescaler;
 		p->tov_cycles_fract = 0.0f;
 		tov_cycles_exact = p->tov_cycles;
 	} else {
