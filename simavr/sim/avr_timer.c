@@ -811,7 +811,7 @@ void avr_timer_icr_top_changed(avr_timer_t *p)
         uint64_t residue=elapsed%div,phase=(elapsed/div)%(2ULL*p->tov_top);
         uint16_t count=_avr_timer_get_current_tcnt(p),top=_timer_get_icr(p);
         int down=p->nu016rm_bottom_at || phase>=p->tov_top;
-        if(top<=count || top<3 || p->nu016ka_active[0]>=top || p->nu016ka_active[1]>=top){
+        if((top<=count && !(getenv("NU016RQ_FALLING_ICR") && down)) || top<3 || p->nu016ka_active[0]>=top || p->nu016ka_active[1]>=top){
             fprintf(stderr,"NU016RO_UNQUALIFIED count=%u top=%u\n",count,top);
             return;
         }
