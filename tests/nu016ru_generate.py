@@ -9,7 +9,7 @@ def generate(root):
     root=Path(root);root.mkdir(parents=True,exist_ok=True);cases=[]
     specs=[(m,2) for m in (1,2,3,8,9,10,11)]+[(8,32),(9,1),(10,4),(11,7)]
     for mode,mask in specs:
-        cid=2000+len(cases);top={1:255,2:511,3:1023}.get(mode,15)
+        cid=2020+len(cases);top={1:255,2:511,3:1023}.get(mode,15)
         a=top if mode in (9,11) else top-3;b=top-2
         initial=top-6 if mode in (1,2,3) else 0
         lines=[".text",".global start","start:"," rjmp main"]
@@ -23,7 +23,7 @@ def generate(root):
         write(0x36,39);write(0x6f,mask);write(0x81,((mode&12)<<1)|2);write(0x43,0)
         lines.extend([" sei"," nop"," ldi r18,64","sample:"," nop"," nop"," inc r24"," dec r18"," brne sample"," cli"," ldi r25,90"," nop"])
         for i,(name,reg) in enumerate((("cap",17),("a",19),("b",26),("ov",27)),1):
-            lines.extend([f"isr_{name}:",f" inc r{reg}",f" ldi r20,{i}"," reti"])
+            lines.extend([f"isr_{name}:"," in r21,0x3f",f" inc r{reg}",f" ldi r20,{i}"," out 0x3f,r21"," reti"])
         (root/f"case-{cid}.S").write_text("\n".join(lines)+"\n")
         cases.append(dict(id=cid,mode=mode,mask=mask,top=top,ocr_a=a,ocr_b=b,initial=initial))
     (root/"cases.json").write_text(json.dumps(cases,indent=2)+"\n");return cases
