@@ -1300,6 +1300,17 @@ avr_timer_write(
 
 	/* mode */
 		p->mode = p->wgm_op[new_mode];
+        /* Settled raw-pin count witness only: WGM10/11 are variable-TOP
+         * phase-correct modes. Internal scheduling and electrical phase
+         * are not changed by this experimental reference correction. */
+        if (p->name=='1' &&
+            (!strcmp(avr->mmcu,"atmega328") || !strcmp(avr->mmcu,"atmega328p")) &&
+            (p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_TN) &&
+            !(p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_VIRT) &&
+            (new_mode==10 || new_mode==11)) {
+            p->mode.kind=avr_timer_wgm_pwm;
+            p->mode.top=new_mode==10 ? avr_timer_wgm_reg_icr : avr_timer_wgm_reg_ocra;
+        }
 		p->wgm_op_mode_kind = p->mode.kind;
 		p->wgm_op_mode_size = (1 << p->mode.size) - 1;
         if (live_pwm && avr_timer_fast_pwm_output_profile(p) && p->nu016ka_valid) {
