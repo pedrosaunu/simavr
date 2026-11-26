@@ -25,6 +25,7 @@
  */
 
 #include <string.h>
+#include <stdlib.h>
 #include "avr_timer_output.h"
 #include "avr_ioport.h"
 
@@ -43,8 +44,10 @@ avr_timer_output_sync(avr_timer_t *p)
         uint8_t mask=1u<<ch;
         uint8_t com=avr_regbit_get(avr,p->comp[ch].com);
         int pwm=mode==5 || mode==6 || mode==7 || mode==14 || mode==15;
-        int enabled=pwm && (com==2 || com==3 ||
-            (ch==0 && com==1 && (mode==14 || mode==15)));
+        int dual=getenv("NU016RA_DUAL_COUNT") && getenv("NU016RH_EVENTS") &&
+            (mode==1||mode==2||mode==3||mode==8||mode==9||mode==10||mode==11);
+        int enabled=(pwm||dual) && (com==2 || com==3 ||
+            (ch==0 && com==1 && (mode==14 || mode==15 || (dual && (mode==9||mode==11)))));
         if (enabled==!!(p->nu016h_override&mask)) continue;
         avr_ioport_getirq_t req={.bit=bit};
         if (avr_ioctl(avr,AVR_IOCTL_IOPORT_GETIRQ_REGBIT,&req)<=0) continue;
