@@ -1,0 +1,9 @@
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr python3 && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN make -C simavr RELEASE=1 all && cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim tests/weightos_nu016q_probe.c -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/probe
+RUN python3 tests/nu016q_generate.py /tmp/matrix
+RUN set -eu; for id in $(seq 1100 1115); do avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -x assembler-with-cpp /tmp/matrix/case-$id.S -o /tmp/pwm.elf; avr-objcopy -O binary -j .text /tmp/pwm.elf /tmp/pwm.bin; NU016L_PRESCALED=1 NU016_BUS_PHASE=2 LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/pwm.bin >/tmp/trace 2>/tmp/events; python3 tests/nu016q_summarize.py "$id" /tmp/pwm.bin /tmp/trace; done
+CMD ["/bin/sh","-c","exit 0"]
