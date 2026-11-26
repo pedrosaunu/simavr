@@ -118,7 +118,7 @@ nu016rh_tick(avr_t *avr, avr_cycle_count_t when, void *param)
     if(!next)avr_raise_interrupt(avr,&p->overflow);
     if(next==top && (mode==8||mode==10))avr_raise_interrupt(avr,&p->icr);
     for(unsigned ch=0;ch<2;ch++){
-        unsigned ocr=_timer_get_ocr(p,ch);
+        unsigned ocr=getenv("NU016RJ_DYNAMIC_OCR")?p->nu016ka_active[ch]:_timer_get_ocr(p,ch);
         unsigned com=avr_regbit_get(avr,p->comp[ch].com);
         int special=ch==0 && (mode==9||mode==11);
         int match=special?next==top:count==ocr;
@@ -133,6 +133,9 @@ nu016rh_tick(avr_t *avr, avr_cycle_count_t when, void *param)
         if(level>=0)avr_timer_output_emit(p,ch,&p->io.irq[TIMER_IRQ_OUT_COMP+ch],
             AVR_IOPORT_OUTPUT|(unsigned)level);
     }
+    if(getenv("NU016RJ_DYNAMIC_OCR") && (next==(mode==8||mode==9?0:top))) {
+        for(unsigned ch=0;ch<2;ch++)p->nu016ka_active[ch]=_timer_get_ocr(p,ch);
+    }
     return when+p->cs_div_value;
 }
 
@@ -142,6 +145,7 @@ nu016rh_arm(avr_timer_t *p,uint16_t count)
     avr_t *avr=p->io.avr;
     uint64_t div=p->cs_div_value;
     uint64_t phase=p->sync_prescaler?(avr->cycle-p->sync_epoch)%div:0;
+    if(getenv("NU016RJ_DYNAMIC_OCR"))for(unsigned ch=0;ch<2;ch++)p->nu016ka_active[ch]=_timer_get_ocr(p,ch);
     p->tov_base=avr->cycle-(uint64_t)count*div-phase;
     avr_cycle_timer_register(avr,div-phase,nu016rh_tick,p);
 }
@@ -1120,6 +1124,8 @@ avr_timer_write_ocr(
         avr_timer_temp_commit_high(timer,comp->r_ocrh);
     }
 	avr_core_watch_write(avr, addr, v);
+    if(getenv("NU016RJ_DYNAMIC_OCR") && nu016rh_events(timer) && !timer->sync_holding)
+        return; /* Only stable TOP interior-duty writes qualified. */
     /* Stopped PWM still buffers writes. The mode cache in the scheduler
      * can be stale when CS=0, so decode the guest register instead. */
     if (avr_timer_pwm_latch_profile(timer) && timer->nu016ka_valid &&
