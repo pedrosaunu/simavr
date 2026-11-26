@@ -1,0 +1,8 @@
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git make gcc g++ libc6-dev pkg-config libelf-dev gcc-avr avr-libc binutils-avr && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY . .
+RUN make -C simavr RELEASE=1 all && cc -std=c11 -O2 -Wall -Wextra -Werror -Isimavr/sim tests/weightos_nu016rz_t1_probe.c -Lsimavr/obj-x86_64-linux-gnu -lsimavr -lelf -o /tmp/probe
+RUN set -eu; for mode in 1 2 3 8 9 10 11; do for cs in 6 7; do avr-gcc -mmcu=atmega328p -nostdlib -Wl,-e,start -DWGM=$mode -DCS=$cs -x assembler-with-cpp tests/nu016rz_t1.S -o /tmp/t1.elf; avr-objcopy -O binary -j .text /tmp/t1.elf /tmp/t1.bin; sha256sum /tmp/t1.bin; LD_LIBRARY_PATH=simavr/obj-x86_64-linux-gnu /tmp/probe /tmp/t1.bin $mode $cs; done; done
+CMD ["/bin/sh","-c","exit 0"]
