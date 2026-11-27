@@ -395,6 +395,16 @@ avr_timer_irq_ext_clock(
         p->wgm_op_mode_kind==avr_timer_wgm_ctc &&
         avr_regbit_get(avr,p->comp[0].com)==avr_timer_com_normal &&
         avr_regbit_get(avr,p->comp[1].com)==avr_timer_com_normal;
+    /* Ordinary raw compare flags are set on the clock AFTER equality.
+     * comp_cycles is OCR+1, so compare against raw TCNT+1. Only
+     * disconnected outputs, no scheduling or TOP phase policy changes. */
+    const int raw_ordinary = p->name=='1' &&
+        (!strcmp(avr->mmcu,"atmega328") || !strcmp(avr->mmcu,"atmega328p")) &&
+        (p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_TN) &&
+        (p->wgm_op_mode_kind==avr_timer_wgm_normal ||
+         p->wgm_op_mode_kind==avr_timer_wgm_fast_pwm) &&
+        avr_regbit_get(avr,p->comp[0].com)==avr_timer_com_normal &&
+        avr_regbit_get(avr,p->comp[1].com)==avr_timer_com_normal;
 	/**
 	  *
 	  * Datasheet excerpt (Compare Match Output Unit):
@@ -411,7 +421,7 @@ avr_timer_irq_ext_clock(
 				continue; // ocra used to define TOP
 		}
 		if (p->comp[compi].comp_cycles &&
-                (p->tov_base + ((raw_dual_flags || raw_ctc) ? 1 : 0) == p->comp[compi].comp_cycles)) {
+                (p->tov_base + ((raw_dual_flags || raw_ctc || raw_ordinary) ? 1 : 0) == p->comp[compi].comp_cycles)) {
 				dispatch[compi](avr, avr->cycle, param);
 			if (p->wgm_op_mode_kind == avr_timer_wgm_ctc && !raw_ctc)
 				p->tov_base = 0;
