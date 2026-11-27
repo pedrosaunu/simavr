@@ -387,6 +387,14 @@ avr_timer_irq_ext_clock(
          p->wgm_op_mode_kind == avr_timer_wgm_pwm) &&
         avr_regbit_get(avr,p->comp[0].com) == avr_timer_com_normal &&
         avr_regbit_get(avr,p->comp[1].com) == avr_timer_com_normal;
+    /* NU-016SE: raw CTC counter compare uses actual TOP, not either
+     * comparator scheduling offset. Scope: ATmega328P, disconnected OC. */
+    const int raw_ctc = p->name=='1' &&
+        (!strcmp(avr->mmcu,"atmega328") || !strcmp(avr->mmcu,"atmega328p")) &&
+        (p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_TN) &&
+        p->wgm_op_mode_kind==avr_timer_wgm_ctc &&
+        avr_regbit_get(avr,p->comp[0].com)==avr_timer_com_normal &&
+        avr_regbit_get(avr,p->comp[1].com)==avr_timer_com_normal;
 	/**
 	  *
 	  * Datasheet excerpt (Compare Match Output Unit):
@@ -403,9 +411,9 @@ avr_timer_irq_ext_clock(
 				continue; // ocra used to define TOP
 		}
 		if (p->comp[compi].comp_cycles &&
-                (p->tov_base + (raw_dual_flags ? 1 : 0) == p->comp[compi].comp_cycles)) {
+                (p->tov_base + ((raw_dual_flags || raw_ctc) ? 1 : 0) == p->comp[compi].comp_cycles)) {
 				dispatch[compi](avr, avr->cycle, param);
-			if (p->wgm_op_mode_kind == avr_timer_wgm_ctc)
+			if (p->wgm_op_mode_kind == avr_timer_wgm_ctc && !raw_ctc)
 				p->tov_base = 0;
 		}
 	}
@@ -448,6 +456,11 @@ avr_timer_irq_ext_clock(
 		case avr_timer_wgm_ctc:
 			{
 				int max = (1 << p->wgm_op[0].size)-1;
+                if (raw_ctc && p->tov_base == p->tov_top) {
+                    overflow = p->tov_base == (unsigned)max;
+                    p->tov_base = 0;
+                    break;
+                }
 				if (++p->tov_base > max) {
 					// overflow occured
 					p->tov_base = 0;
@@ -1383,6 +1396,16 @@ avr_timer_write(
             p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
             !p->sync_holding;
 		avr_timer_reconfigure(p, 1);
+        /* Starting fixed-width raw Fast PWM from CS=0 retains guest TCNT.
+         * No connected OC, dynamic buffer or physical timing claim. */
+        if (cs==0 && (new_cs==6 || new_cs==7) && mode==new_mode &&
+            (new_mode==5 || new_mode==6 || new_mode==7) &&
+            p->name=='1' && (!strcmp(avr->mmcu,"atmega328") || !strcmp(avr->mmcu,"atmega328p")) &&
+            !(p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_VIRT) &&
+            avr_regbit_get(avr,p->comp[0].com)==avr_timer_com_normal &&
+            avr_regbit_get(avr,p->comp[1].com)==avr_timer_com_normal) {
+            p->tov_base=kept;
+        }
         if (raw_wgm8_lifecycle) {
             p->tov_base=raw_count;
             p->ext_clock_flags=(p->ext_clock_flags & ~AVR_TIMER_EXTCLK_FLAG_REVDIR)|raw_direction;
