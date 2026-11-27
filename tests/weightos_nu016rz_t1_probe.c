@@ -29,7 +29,7 @@ int main(int argc,char **argv) {
     for(i=0;i<100 && a->data[25]!=90;i++)if(!retire(a))return 4;
     if(a->data[25]!=90)return 5;
     const unsigned pattern[]={0,1,1,0,0,1,0,1,1,0,1,0,0,1,1,0};
-    unsigned old=0,edges=0,matches=0;
+    unsigned old=0,edges=0,matches=0,flag_matches=0;
     for(unsigned k=0;k<64;k++){
         unsigned level=pattern[k%16];
         if(level!=old && ((cs==7&&level)||(cs==6&&!level)))edges++;
@@ -42,9 +42,14 @@ int main(int argc,char **argv) {
         unsigned phase=edges%(2*top),expected=phase<=top?phase:2*top-phase;
         unsigned actual=a->data[18]+256u*a->data[19];
         matches+=(actual==expected);
+        /* Fixture has OCR1B=2; OCR1A=3 or TOP=7, no W1C/ISR after startup. */
+        unsigned expected_flags=(edges>=3?4u:0u) | (edges>=((mode==9||mode==11)?7u:4u)?2u:0u) |
+            (((mode==8||mode==10)&&edges>=7)?32u:0u) | ((mode>=8&&edges>=14)?1u:0u);
+        flag_matches+=(a->data[20]==expected_flags);
         printf("NU016RZ_SAMPLE mode=%u cs=%u sample=%u level=%u edges=%u edge_cycle=%llu observed_cycle=%llu expected=%u actual=%u flags=%u\n",
             mode,cs,k,level,edges,edge_cycle,(unsigned long long)a->cycle,expected,actual,a->data[20]);
     }
     printf("NU016RZ_REFERENCE mode=%u cs=%u samples=64 edges=%u matches=%u\n",mode,cs,edges,matches);
-    avr_terminate(a);return 0;
+    printf("NU016SB_REFERENCE mode=%u cs=%u samples=64 counter_matches=%u flag_matches=%u\n",mode,cs,matches,flag_matches);
+    avr_terminate(a);return (matches==64 && flag_matches==64)?0:6;
 }
