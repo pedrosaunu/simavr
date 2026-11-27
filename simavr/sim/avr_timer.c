@@ -364,6 +364,19 @@ avr_timer_irq_ext_clock(
 		{ avr_timer_compa, avr_timer_compb, avr_timer_compc };
 
 	int overflow = 0;
+    /* NU-016SB bounded reference correction: raw external Timer1,
+     * dual-slope counting with disconnected OC pins. comp_cycles stores
+     * OCR+1 scheduling offsets, not a TCNT value (cs_div_value=1).
+     * Datasheet 7810D 15.9.4/15.9.5 and 15.11.9 distinguish ordinary
+     * compare flags on the following timer tick and TOP flags at TOP.
+     * No waveform, live-register, or synchronizer qualification implied. */
+    const int raw_dual_flags = p->name == '1' &&
+        (!strcmp(avr->mmcu,"atmega328") || !strcmp(avr->mmcu,"atmega328p")) &&
+        (p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_TN) &&
+        (p->wgm_op_mode_kind == avr_timer_wgm_fc_pwm ||
+         p->wgm_op_mode_kind == avr_timer_wgm_pwm) &&
+        avr_regbit_get(avr,p->comp[0].com) == avr_timer_com_normal &&
+        avr_regbit_get(avr,p->comp[1].com) == avr_timer_com_normal;
 	/**
 	  *
 	  * Datasheet excerpt (Compare Match Output Unit):
@@ -379,7 +392,8 @@ avr_timer_irq_ext_clock(
 			if ((p->mode.top == avr_timer_wgm_reg_ocra) && (compi == 0))
 				continue; // ocra used to define TOP
 		}
-		if (p->comp[compi].comp_cycles && (p->tov_base == p->comp[compi].comp_cycles)) {
+		if (p->comp[compi].comp_cycles &&
+                (p->tov_base + (raw_dual_flags ? 1 : 0) == p->comp[compi].comp_cycles)) {
 				dispatch[compi](avr, avr->cycle, param);
 			if (p->wgm_op_mode_kind == avr_timer_wgm_ctc)
 				p->tov_base = 0;
@@ -399,6 +413,12 @@ avr_timer_irq_ext_clock(
 			}
 			else {
 				if (++p->tov_base >= p->tov_top) {
+                    if (raw_dual_flags && p->tov_base == p->tov_top) {
+                        if (p->mode.top == avr_timer_wgm_reg_icr)
+                            avr_raise_interrupt(avr,&p->icr);
+                        else if (p->mode.top == avr_timer_wgm_reg_ocra)
+                            avr_raise_interrupt(avr,&p->comp[0].interrupt);
+                    }
 					p->ext_clock_flags |= AVR_TIMER_EXTCLK_FLAG_REVDIR; // prepare to count down
 				}
 			}
