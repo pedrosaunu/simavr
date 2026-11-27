@@ -342,16 +342,18 @@ avr_timer_irq_ext_clock(
 	avr_timer_t * p = (avr_timer_t *)param;
 	avr_t * avr = p->io.avr;
 
-	if ((p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_VIRT) || !p->tov_top)
+	if ((p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_VIRT) || !p->tov_top) {
 		return;			// we are clocked internally (actually should never come here)
+	}
     /* NU-016SD: a retained raw pin notification is not a running clock
      * while CS=0. Restrict this witness correction to the WGM8 profile. */
     if (!p->cs_div_value && p->name=='1' &&
         (!strcmp(avr->mmcu,"atmega328") || !strcmp(avr->mmcu,"atmega328p")) &&
         avr_regbit_get_array(avr,p->wgm,ARRAY_SIZE(p->wgm))==8 &&
         avr_regbit_get(avr,p->comp[0].com)==avr_timer_com_normal &&
-        avr_regbit_get(avr,p->comp[1].com)==avr_timer_com_normal)
+        avr_regbit_get(avr,p->comp[1].com)==avr_timer_com_normal) {
         return;
+    }
 
 	int bing = 0;
 	if (p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_EDGE) { // clock on rising edge
