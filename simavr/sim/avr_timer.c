@@ -344,6 +344,14 @@ avr_timer_irq_ext_clock(
 
 	if ((p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_VIRT) || !p->tov_top)
 		return;			// we are clocked internally (actually should never come here)
+    /* NU-016SD: a retained raw pin notification is not a running clock
+     * while CS=0. Restrict this witness correction to the WGM8 profile. */
+    if (!p->cs_div_value && p->name=='1' &&
+        (!strcmp(avr->mmcu,"atmega328") || !strcmp(avr->mmcu,"atmega328p")) &&
+        avr_regbit_get_array(avr,p->wgm,ARRAY_SIZE(p->wgm))==8 &&
+        avr_regbit_get(avr,p->comp[0].com)==avr_timer_com_normal &&
+        avr_regbit_get(avr,p->comp[1].com)==avr_timer_com_normal)
+        return;
 
 	int bing = 0;
 	if (p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_EDGE) { // clock on rising edge
@@ -1261,6 +1269,20 @@ avr_timer_write(
 	uint8_t new_as2 = avr_regbit_get(avr, p->as2);
 	uint8_t new_cs = avr_regbit_get_array(avr, p->cs, ARRAY_SIZE(p->cs));
 	uint8_t new_mode = avr_regbit_get_array(avr, p->wgm, ARRAY_SIZE(p->wgm));
+    /* NU-016SD: CS selection alone does not reset TCNT or count direction.
+     * Retain the raw counter through reconfiguration of the fixed WGM8
+     * disconnected-output witness. No claim on transitions at a pin edge,
+     * internal clocks, live TOP writes, or physical sync delay. */
+    const int raw_wgm8_lifecycle=p->name=='1' &&
+        (!strcmp(avr->mmcu,"atmega328") || !strcmp(avr->mmcu,"atmega328p")) &&
+        mode==8 && new_mode==8 && !as2 && !new_as2 && !p->sync_holding &&
+        !(p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_VIRT) &&
+        (cs==0 || cs==6 || cs==7) && (new_cs==0 || new_cs==6 || new_cs==7) &&
+        avr_regbit_get(avr,p->comp[0].com)==avr_timer_com_normal &&
+        avr_regbit_get(avr,p->comp[1].com)==avr_timer_com_normal;
+    const uint16_t raw_count=raw_wgm8_lifecycle ?
+        (cs==0 ? _timer_get_tcnt(p) : (uint16_t)p->tov_base) : 0;
+    const uint8_t raw_direction=p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_REVDIR;
     avr_timer_output_sync(p);
     if (avr_timer_pwm_latch_profile(p)) {
         if (!avr_timer_pwm_mode(new_mode))
@@ -1287,7 +1309,7 @@ avr_timer_write(
 			 * guest-written value is already authoritative when the
 			 * timer is halted or held by TSM.
 			 */
-			uint16_t held = p->sync_holding ? p->sync_hold_tcnt :
+			uint16_t held = raw_wgm8_lifecycle ? raw_count : p->sync_holding ? p->sync_hold_tcnt :
 				(!p->cs_div_value || !p->tov_cycles)
 					? _timer_get_tcnt(p)
 					: _avr_timer_get_current_tcnt(p);
@@ -1297,6 +1319,10 @@ avr_timer_write(
 			p->cs_div_value = 0;		// no clock selected
 			// cancel everything after preserving the live counter
 			avr_timer_cancel_all_cycle_timers(avr, p, 1);
+            if (raw_wgm8_lifecycle) {
+                p->tov_base=raw_count;
+                p->ext_clock_flags=(p->ext_clock_flags & ~AVR_TIMER_EXTCLK_FLAG_REVDIR)|raw_direction;
+            }
 
 			AVR_LOG(avr, LOG_TRACE, "TIMER: %s-%c clock turned off\n",
 					__func__, p->name);
@@ -1355,6 +1381,10 @@ avr_timer_write(
             p->wgm_op_mode_kind == avr_timer_wgm_fast_pwm &&
             !p->sync_holding;
 		avr_timer_reconfigure(p, 1);
+        if (raw_wgm8_lifecycle) {
+            p->tov_base=raw_count;
+            p->ext_clock_flags=(p->ext_clock_flags & ~AVR_TIMER_EXTCLK_FLAG_REVDIR)|raw_direction;
+        }
         if (p->nu016f_start_schedule && p->nu016ka_valid)
             fprintf(stderr,"NU016KA RESUME cpu=%llu count=%u active_a=%u active_b=%u pending_a=%u pending_b=%u\n",
                 (unsigned long long)avr->cycle,kept,p->nu016ka_active[0],p->nu016ka_active[1],
