@@ -47,5 +47,5 @@ int main(int argc,char **argv) {
             mode,cs,k,level,edges,edge_cycle,(unsigned long long)a->cycle,expected,actual,a->data[20]);
     }
     printf("NU016SE_REFERENCE mode=%u cs=%u samples=64 edges=%u matches=%u\n",mode,cs,edges,matches);
-    avr_terminate(a);return 0;
+    avr_terminate(a);return matches==64?0:6;
 }
