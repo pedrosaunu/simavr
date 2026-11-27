@@ -30,7 +30,7 @@ int main(int argc,char **argv) {
     for(i=0;i<100 && a->data[25]!=90;i++)if(!retire(a))return 4;
     if(a->data[25]!=90)return 5;
     const unsigned pattern[]={0,1,1,0,0,1,0,1,1,0,1,0,0,1,1,0};
-    unsigned old=0,edges=0,matches=0;
+    unsigned old=0,edges=0,matches=0,ordinary_matches=0;
     for(unsigned k=0;k<64;k++){
         unsigned level=pattern[k%16];
         if(level!=old && ((cs==7&&level)||(cs==6&&!level)))edges++;
@@ -43,9 +43,15 @@ int main(int argc,char **argv) {
         unsigned expected=(seed+edges)%(top+1);
         unsigned actual=a->data[18]+256u*a->data[19];
         matches+=(actual==expected);
+        unsigned a_first=(mode==0||mode==5||mode==6||mode==7)?8u:((mode==4)?8u:4u);
+        unsigned b_first=(mode==0||mode==5||mode==6||mode==7)?7u:3u;
+        unsigned expected_ordinary=(edges>=a_first?2u:0u)|(edges>=b_first?4u:0u);
+        unsigned mask=mode==15?4u:6u; /* OCR1A-as-TOP special timing excluded */
+        ordinary_matches+=((a->data[20]&mask)==(expected_ordinary&mask));
         printf("NU016SE_SAMPLE mode=%u cs=%u sample=%u level=%u edges=%u edge_cycle=%llu observed_cycle=%llu expected=%u actual=%u flags=%u\n",
             mode,cs,k,level,edges,edge_cycle,(unsigned long long)a->cycle,expected,actual,a->data[20]);
     }
     printf("NU016SE_REFERENCE mode=%u cs=%u samples=64 edges=%u matches=%u\n",mode,cs,edges,matches);
-    avr_terminate(a);return matches==64?0:6;
+    printf("NU016SN_ORDINARY mode=%u cs=%u matches=%u\n",mode,cs,ordinary_matches);
+    avr_terminate(a);return matches==64 && ordinary_matches==64?0:6;
 }
